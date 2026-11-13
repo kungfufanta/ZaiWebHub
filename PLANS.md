@@ -155,7 +155,7 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 2. zsdk trả ReadableStream raw SSE — mọi code giả định AsyncIterable-of-objects phải bỏ (đã cập nhật T1-b scope).
 3. SSE POST dài qua Caddy/XTransformPort có thể bị buffer → verify ngay sau T3-c (`curl -N`).
 4. WebHub RAM với nhiều stream in-flight (~50–500KB/stream) → MVP chấp nhận, theo dõi ở T4-c.
-5. **Bảo mật**: PAT cũ ĐÃ LỘ trong hội thoại — KHÔNG dùng lại; chủ dự án cần revoke/rotate ngay, tạo PAT mới fine-grained (chỉ repo này, chỉ contents:read+write, expiry ngắn). Không commit token vào repo; không ghi token vào git config vĩnh viễn. Cho đến khi có PAT mới, mọi commit chỉ nằm local.
+5. **Bảo mật** (cập nhật [v6]): PAT cũ ĐÃ LỘ trong hội thoại — chủ dự án đã cấp PAT fine-grained mới, 5 commit đã push thành công lên `origin/main`. PAT cũ phải được revoke ngay nếu chưa. PAT mới cũng đã đi qua kênh chat → khuyến nghị expiry ngắn (30–90 ngày) và rotate lại sau phiên làm việc. Vẫn giữ quy tắc bất di bất dịch: không commit token vào repo; không ghi token vào git config vĩnh viễn (push bằng one-off URL).
 6. **(Đợt 2-final) E2E thinking = BLOCKER production chờ key Z.AI thật cho VPS** (env `ZAI_API_KEY`, KHÔNG inject vào sandbox). KHÔNG block Đợt 3 — mọi tầng code defensive (worker relay nếu thấy reasoning, hub byte-blind, UI tự hiện panel).
 7. **(Đợt 2-final) Nhãn xác minh bắt buộc**: mọi tuyên bố "thinking works" phải ghi `mock-verified` hoặc `real-upstream-verified`. Prototype thinking panel chưa bao giờ nhận reasoning thật từ upstream (proxy strip) — mọi số liệu "TTFB 40ms / 230 events / 1.189 ký tự suy luận" của dev-console mock là `mock-verified`.
 
@@ -252,3 +252,14 @@ Protocol package (T1-a-1) implement trực tiếp bởi agent phiên này TRƯ�
 **Nhãn xác minh:** TOÀN BỘ kết quả trên là `mock-verified` / no-reasoning (proxy) — reasoning path là code defensive, `real-upstream-verified` chỉ đạt được trên VPS với `UPSTREAM=real` + key thật (blocker #6).
 
 **Open question cho owner (F6 follow-up):** assistant answer text KHÔNG được lưu vào StateStore (hub byte-blind không trích được từ raw SSE; worker bị cấm đụng content) → bộ nhớ hội thoại MVP dựa vào client gửi đủ history. Nếu muốn server-side memory đầy đủ → cho worker kèm `answer_text` trong `job.done` (mở rộng F6 một cách kiểm soát) — chờ owner chốt.
+
+### [v6] PAT rotation + push 5 commit lên GitHub (2026-11-13)
+
+**Sự kiện:** chủ dự án cấp PAT fine-grained mới (chỉ repo `kungfufanta/ZaiWebHub`, Contents: Read and write).
+
+- Push thành công: `origin/main` `4bb25be..0e61d89` — 5 commit đã lên GitHub:
+  `b4f9b6c` (T0-a khung monorepo + T1-c-mock), `b6bdbdb` (T0-b/T0-c spike + plan), `947269f` (T1-a-1 freeze + G2 debug), `2c6b4f2` (T1-a-1+T1-a-2 implement protocol F1–F9), `0e61d89` (Đợt 3 adapter+worker+webhub+dev-console E2E).
+- Push bằng one-off URL; token KHÔNG nằm trong git config, không vào repo. Verify: `ls-remote` head = `0e61d89`, local và remote đồng bộ.
+- Rủi ro còn lại: PAT mới cũng đi qua kênh chat → owner nên revoke PAT cũ NGAY (nếu chưa) và rotate PAT mới khi phiên kết thúc.
+- Trạng thái kế hoạch: **Đợt 1–3 DONE + đã lên GitHub**. Còn mở: T3-f verify đầy đủ trên prod, T4-a…T4-d, và **Đợt 3.5 (remote worker onboarding: TLS wss://, worker auth, multi-worker registry)** chờ chủ dự án chốt 5 câu trong đề xuất chuyển hướng kiến trúc (cốt lõi: auth worker — shared secret hay per-worker token; số sandbox dự kiến).
+- Blocker production không đổi: E2E thinking thật chờ key Z.AI thật (`ZAI_API_KEY`) cho nơi chạy worker với `UPSTREAM=real` — nhãn `real-upstream-verified` chỉ gắn được sau khi test qua upstream thật (xem risk #6, #7).
