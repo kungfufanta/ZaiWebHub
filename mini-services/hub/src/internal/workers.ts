@@ -22,9 +22,9 @@ export interface InternalWorkersDeps {
 export function createInternalWorkersRouter(deps: InternalWorkersDeps): Hono {
   const router = new Hono();
 
-  router.get('/internal/workers', (c) => {
+  router.get('/internal/workers', async (c) => {
     const provided = c.req.header('X-Worker-Secret');
-    if (isWorkerSecretRequired() && !matchesWorkerSecret(provided)) {
+    if ((await isWorkerSecretRequired()) && !(await matchesWorkerSecret(provided))) {
       log('warn', 'internal/workers refused: missing/wrong X-Worker-Secret', {
         forwarded_for: c.req.header('X-Forwarded-For') ?? 'unknown',
         path: c.req.path,

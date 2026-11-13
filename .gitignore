@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# runtime secrets (ghi bởi web UI — POST /api/worker-secret, mode 0600)
+.runtime/
+
 # vercel
 .vercel
 
@@ -54,3 +57,7 @@ server.log
 /skills/
 # env example cần commit
 !.env.example
+
+# sandbox runtime (platform-managed, không commit)
+.zscripts/
+/db/custom.db

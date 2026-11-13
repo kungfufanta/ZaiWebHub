@@ -6,6 +6,7 @@
 // expose công khai. KHÔNG set env → chỉ chấp nhận cho dev loopback.
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { log } from './logger';
+import { resolveWorkerSecret } from './runtime-secret';
 
 const DEFAULT_TENANT_KEY = 'zhb_dev_default_key';
 const DEFAULT_SECRET = 'dev-secret-rotate-me';
@@ -96,17 +97,19 @@ export function verifyWorkerToken(
   return { ok: true, payload: { tenant_id: p.tenant_id, iat: p.iat, exp: p.exp } };
 }
 
-// ---------- Đợt 3.5: worker secret (public internet) ----------
+// ---------- Đợt 3.5 + 4.0-W: worker secret (public internet) ----------
 // Worker connect từ sandbox KHÁC qua internet công cộng → /internal/worker-token phải gate bằng
-// shared secret, nếu không ai cắm worker lạ vào hub cũng được (chiếm job). Hub set env WORKER_SECRET;
-// worker gửi cùng giá trị qua header X-Worker-Secret khi fetch token. KHÔNG set env → dev mode
-// (không gate — hành vi cũ, chỉ dùng loopback). Giá trị secret KHÔNG BAO GIỜ log.
-export function isWorkerSecretRequired(): boolean {
-  return Boolean(process.env.WORKER_SECRET);
+// shared secret, nếu không ai cắm worker lạ vào hub cũng được (chiếm job).
+// 4.0-W: secret resolve ĐỘNG từ runtime file .runtime/worker-secret.json (ghi bởi console UI
+// POST /api/worker-secret — owner tạo/xoay secret trên web, hub áp dụng NGAY không restart),
+// fallback process.env.WORKER_SECRET. KHÔNG set gì → dev mode (không gate — chỉ loopback).
+// Giá trị secret KHÔNG BAO GIỜ log.
+export async function isWorkerSecretRequired(): Promise<boolean> {
+  return (await resolveWorkerSecret()).secret !== null;
 }
 
-export function matchesWorkerSecret(input: string | null | undefined): boolean {
-  const expected = process.env.WORKER_SECRET ?? '';
+export async function matchesWorkerSecret(input: string | null | undefined): Promise<boolean> {
+  const { secret: expected } = await resolveWorkerSecret();
   if (!expected) return true; // dev mode — gate không bật
   // hash 2 bên về 32 byte để timing-safe không lộ chiều dài secret
   const a = createHash('sha256').update(input ?? '').digest();
@@ -115,13 +118,14 @@ export function matchesWorkerSecret(input: string | null | undefined): boolean {
 }
 
 // Ghi log cảnh báo một lần lúc boot (T3-f) — không in secret ra log.
-export function logSecurityBaselineWarnings(): void {
+export async function logSecurityBaselineWarnings(): Promise<void> {
   if (!process.env.WEBHUB_SECRET) {
     log('warn', 'WEBHUB_SECRET not set — using default dev secret; rotate before any real deployment');
   }
-  if (isWorkerSecretRequired()) {
-    log('info', '/internal/worker-token gated by WORKER_SECRET (header X-Worker-Secret) — Đợt 3.5');
+  const { secret, source } = await resolveWorkerSecret();
+  if (secret) {
+    log('info', `/internal/worker-token gated by WORKER_SECRET (source: ${source}, header X-Worker-Secret) — Đợt 3.5 + 4.0-W`);
   } else {
-    log('warn', '/internal/worker-token is UNAUTHENTICATED (WORKER_SECRET not set) — CHỈ dùng loopback, KHÔNG expose công khai');
+    log('warn', '/internal/worker-token is UNAUTHENTICATED (WORKER_SECRET not set) — CHỈ dùng loopback, KHÔNG expose công khai. Tạo secret trên web UI (tab /workers) để bật gate.');
   }
 }

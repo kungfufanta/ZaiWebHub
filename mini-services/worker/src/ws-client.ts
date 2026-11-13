@@ -16,12 +16,17 @@ import {
   type WorkerToHub,
 } from './protocol';
 import { loadConfig, type WorkerConfig } from './config';
+import { readLiveSecret } from './file-config';
 import { startJob, type JobHandle, type JobIo } from './executor';
 import { errMsg, log, sleep } from './util';
 
 const TOKEN_FETCH_TIMEOUT_MS = 5_000;
 const MAX_BACKOFF_MS = 30_000;
 const BASE_BACKOFF_MS = 1_000;
+// Connect timeout BẮT BUỘC (4.0-W fix): WS có thể kẹt ở CONNECTING VĨNH VIỄN khi port hub
+// chết/lifecycle flap mà KHÔNG bắn open/error/close (Bun edge case) → connectLoop chết chỗ,
+// worker không bao giờ retry lại. Timeout này đảm bảo loop luôn sống lại sau mỗi lần hụt.
+const WS_CONNECT_TIMEOUT_MS = 10_000;
 // Backpressure BẮT BUỘC (PLAN T2-b): > 1MB → tạm dừng đọc adapter stream tới khi < 256KB.
 const BUFFERED_HIGH_WATER = 1_048_576; // 1MB
 const BUFFERED_LOW_WATER = 262_144; // 256KB
@@ -345,11 +350,28 @@ async function connectOnce(state: WorkerState): Promise<void> {
     let settled = false;
     let connRef: WsConn | null = null;
     const finish = (): void => {
-      if (!settled) {
-        settled = true;
-        resolve();
-      }
+      if (settled) return;
+      settled = true;
+      clearTimeout(connectTimer);
+      resolve();
     };
+
+    // Connect timeout: socket không OPEN trong 10s (kẹt CONNECTING/half-open) → đóng + retry.
+    const connectTimer = setTimeout(() => {
+      if (settled) return;
+      log('warn', `WS connect timeout after ${WS_CONNECT_TIMEOUT_MS}ms — closing socket to retry`, {
+        worker_id: state.config.workerId,
+        hub_url: state.config.hubUrl,
+      });
+      try {
+        connRef?.close();
+      } catch {
+        // bỏ qua — close có thể no-op nếu socket chưa mở
+      }
+      // onClose có thể không bắn với socket kẹt — resolve thủ công để loop retry
+      finish();
+    }, WS_CONNECT_TIMEOUT_MS);
+    connectTimer.unref?.();
 
     const conn = openWs(state.config.hubUrl, {
       onOpen: (c) => {
@@ -426,17 +448,28 @@ async function connectOnce(state: WorkerState): Promise<void> {
     state.ws = conn;
   });
 }
-
 /**
  * Token: WORKER_TOKEN env nếu có; nếu không thì fetch token endpoint.
  * HUB_TOKEN_URL (full URL, có thể kèm ?XTransformPort=...) ưu tiên hơn hubHttpBase;
  * WORKER_SECRET (nếu set) gửi kèm header X-Worker-Secret — hub từ chối 401 nếu sai.
  * TTL ~60s → gọi LẠI ở mỗi lần open/reconnect (không cache).
+ * 4.0-W: config boot từ file ('file' | 'ui-setup') → re-read worker_secret LIVE từ
+ * worker-config.json trước mỗi lần fetch — owner TẠO/XOAY secret trên web UI (console
+ * POST /api/worker-secret cũng sync file này) → áp dụng NGAY lần reconnect kế, không restart.
  * 401 / 404 / connection-refused → throw → retry backoff (KHÔNG log secret).
  */
 async function fetchToken(state: WorkerState): Promise<string> {
   const envToken = process.env.WORKER_TOKEN;
   if (envToken && envToken.length > 0) return envToken;
+  if (state.startedSource === 'file' || state.startedSource === 'ui-setup') {
+    const live = await readLiveSecret();
+    if (live && live !== state.config.workerSecret) {
+      log('info', 'worker secret rotated on hub UI — picked up fresh value from config file', {
+        worker_id: state.config.workerId,
+      });
+      state.config.workerSecret = live;
+    }
+  }
   const { hubTokenUrl, hubHttpBase, tenantId, workerSecret } = state.config;
   const base = hubTokenUrl || `${hubHttpBase}/internal/worker-token`;
   const joiner = base.includes('?') ? '&' : '?';

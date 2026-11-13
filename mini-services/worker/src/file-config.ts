@@ -182,3 +182,14 @@ export async function fileConfigToWorkerConfig(file: FileConfig): Promise<Worker
     workerSecret: file.worker_secret,
   };
 }
+
+/**
+ * Đọc secret "live" từ worker-config.json (4.0-W) — worker LOCAL (cùng repo/sandbox với hub)
+ * tự áp dụng secret mới khi owner TẠO/XOAY trên web UI (console POST /api/worker-secret
+ * cũng sync file này) mà KHÔNG cần restart worker.
+ * Chỉ dùng khi boot source là file ('file' | 'ui-setup') — config từ env là explicit, không override.
+ */
+export async function readLiveSecret(): Promise<string | null> {
+  const file = await readFileConfig();
+  return file && file.worker_secret ? file.worker_secret : null;
+}

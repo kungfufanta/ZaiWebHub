@@ -86,11 +86,12 @@ app.use(
   }),
 );
 
-// Mint worker token. WORKER_SECRET set → bắt buộc header X-Worker-Secret khớp
-// (timing-safe compare); sai → 401. KHÔNG set → dev loopback-only, KHÔNG expose công khai.
-app.get('/internal/worker-token', (c) => {
+// Mint worker token. WORKER_SECRET set (env hoặc runtime file — 4.0-W) → bắt buộc header
+// X-Worker-Secret khớp (timing-safe compare); sai → 401. KHÔNG set → dev loopback-only,
+// KHÔNG expose công khai.
+app.get('/internal/worker-token', async (c) => {
   const provided = c.req.header('X-Worker-Secret');
-  if (isWorkerSecretRequired() && !matchesWorkerSecret(provided)) {
+  if ((await isWorkerSecretRequired()) && !(await matchesWorkerSecret(provided))) {
     log('warn', 'worker-token refused: missing/wrong X-Worker-Secret', {
       forwarded_for: c.req.header('X-Forwarded-For') ?? 'unknown',
       path: c.req.path,
@@ -129,12 +130,12 @@ app.route('/', createInternalWorkersRouter({ hub, stats }));
 // Route khác → 404 (mặc định Hono) — log để trace
 app.notFound((c) => c.json({ error: { message: 'not found' } }, 404));
 
-logSecurityBaselineWarnings();
+void logSecurityBaselineWarnings();
 log('info', 'webhub booting', {
   port: PORT,
   tenant_key_count: getTenantKeys().length,
   webhub_secret_set: Boolean(process.env.WEBHUB_SECRET),
-  worker_secret_required: isWorkerSecretRequired(),
+  worker_secret_required: await isWorkerSecretRequired(),
 });
 
 const server = serve({ fetch: app.fetch, port: PORT }, (info) => {

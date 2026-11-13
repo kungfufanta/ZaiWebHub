@@ -1,7 +1,11 @@
-// apps/dev-console — /api/workers (3.6-H)
+// apps/dev-console — /api/workers (3.6-H + 4.0-W)
 // Server-side proxy tới webhub GET /internal/workers (:3003).
-// WORKER_SECRET CHỈ tồn tại ở server (env) — không bao giờ trả secret về client.
+// WORKER_SECRET CHỈ tồn tại ở server — không bao giờ trả secret về client.
+// 4.0-W: đọc secret ĐỘNG từ runtime file (.runtime/worker-secret.json) ưu tiên env —
+// owner xoay secret trên web → proxy dùng giá trị mới NGAY, không restart console.
 // Client poll route này mỗi 5s ở tab /workers và /stats.
+import { getWorkerSecretInfo } from '@/lib/worker-secret-store';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -9,8 +13,9 @@ const HUB_INTERNAL_URL = process.env.HUB_INTERNAL_URL ?? 'http://127.0.0.1:3003'
 
 export async function GET(): Promise<Response> {
   const headers: Record<string, string> = { accept: 'application/json' };
-  if (process.env.WORKER_SECRET) {
-    headers['x-worker-secret'] = process.env.WORKER_SECRET;
+  const { secret } = await getWorkerSecretInfo();
+  if (secret) {
+    headers['x-worker-secret'] = secret;
   }
   try {
     const res = await fetch(`${HUB_INTERNAL_URL}/internal/workers`, {

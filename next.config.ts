@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   /* config options here */
+  // 4.0-W (fix port env): src/instrumentation.ts đăng ký service supervisor (tự spawn lại hub
+  // :3003 / worker :3005 khi không phản hồi, GHÌ PORT riêng) — phải qua server restart.
   typescript: {
     ignoreBuildErrors: true,
   },

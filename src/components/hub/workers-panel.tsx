@@ -6,7 +6,26 @@
 // - Box "Worker Connection Info": owner paste HUB PUBLIC BASE URL → sinh URL
 //   {BASE}/internal/worker-token?XTransformPort=3003 để paste vào worker sandbox.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
+  RefreshCw,
+  TriangleAlert,
+} from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +51,12 @@ const EMPTY_STATE_TEXT =
 const CONNECTION_HINT =
   'Mở worker sandbox → :3000 → paste URL này + secret (copy WORKER_SECRET bên dưới) vào form setup của worker.';
 
+interface WorkerSecretState {
+  set: boolean;
+  worker_secret: string | null;
+  source: 'runtime-file' | 'env' | null;
+}
+
 export function WorkersPanel() {
   const { toast } = useToast();
   const [snapshot, setSnapshot] = useState<WorkersSnapshot | null>(null);
@@ -39,9 +64,12 @@ export function WorkersPanel() {
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [hubBase, setHubBase] = useState('');
   const [copied, setCopied] = useState(false);
-  const [secret, setSecret] = useState<{ set: boolean; worker_secret: string | null } | null>(null);
+  const [secret, setSecret] = useState<WorkerSecretState | null>(null);
   const [secretReveal, setSecretReveal] = useState(false);
   const [secretCopied, setSecretCopied] = useState(false);
+  const [customSecret, setCustomSecret] = useState('');
+  const [savingSecret, setSavingSecret] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -69,23 +97,24 @@ export function WorkersPanel() {
     if (saved) setHubBase(saved);
   }, []);
 
-  // WORKER_SECRET từ env console (server-side route) — owner copy cho worker khi onboard
-  useEffect(() => {
-    let alive = true;
-    fetch('/api/worker-secret', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((d) => {
-        if (alive && d && typeof d === 'object') {
-          setSecret({ set: Boolean(d.set), worker_secret: d.worker_secret ?? null });
-        }
-      })
-      .catch(() => {
-        if (alive) setSecret({ set: false, worker_secret: null });
+  // WORKER_SECRET từ server (runtime file/env) — owner copy cho worker khi onboard
+  const loadSecret = useCallback(async () => {
+    try {
+      const r = await fetch('/api/worker-secret', { cache: 'no-store' });
+      const d = (await r.json()) as Record<string, unknown>;
+      setSecret({
+        set: Boolean(d.set),
+        worker_secret: typeof d.worker_secret === 'string' ? d.worker_secret : null,
+        source: d.source === 'runtime-file' || d.source === 'env' ? d.source : null,
       });
-    return () => {
-      alive = false;
-    };
+    } catch {
+      setSecret({ set: false, worker_secret: null, source: null });
+    }
   }, []);
+
+  useEffect(() => {
+    void loadSecret();
+  }, [loadSecret]);
 
   const workerTokenUrl = useMemo(() => buildWorkerTokenUrl(hubBase), [hubBase]);
 
@@ -124,6 +153,52 @@ export function WorkersPanel() {
       toast({ title: 'Copy thất bại', description: 'Browser chặn clipboard — chọn secret bằng tay rồi Ctrl+C.' });
     }
   }, [secret, toast]);
+
+  // 4.0-W — TẠO/XOAY secret NGAY TRÊN WEB: POST /api/worker-secret → hub + worker local
+  // áp dụng NGAY qua runtime file, không restart service nào.
+  const doSaveSecret = useCallback(async () => {
+    setSavingSecret(true);
+    try {
+      const value = customSecret.trim();
+      const res = await fetch('/api/worker-secret', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(value ? { value } : {}),
+      });
+      const d = (await res.json().catch(() => null)) as
+        | { ok?: boolean; worker_secret?: string; error?: { message?: string } }
+        | null;
+      if (!res.ok || !d?.ok || typeof d.worker_secret !== 'string') {
+        toast({
+          title: 'Tạo secret thất bại',
+          description: d?.error?.message ?? `HTTP ${res.status}`,
+          variant: 'destructive',
+        });
+        return;
+      }
+      setSecret({ set: true, worker_secret: d.worker_secret, source: 'runtime-file' });
+      setCustomSecret('');
+      setSecretReveal(true); // tạo mới → owner cần thấy giá trị để copy cho worker
+      toast({
+        title: secret?.set ? 'Đã xoay WORKER_SECRET' : 'Đã tạo WORKER_SECRET',
+        description:
+          'Hub :3003 + worker local áp dụng ngay qua runtime file — không cần restart. Copy secret cho worker sandbox (worker cũ phải cập nhật secret mới ở lần reconnect kế).',
+      });
+    } catch (err) {
+      toast({ title: 'Tạo secret thất bại', description: String(err), variant: 'destructive' });
+    } finally {
+      setSavingSecret(false);
+      setConfirmOpen(false);
+    }
+  }, [customSecret, secret?.set, toast]);
+
+  const onRequestSaveSecret = useCallback(() => {
+    if (secret?.set) {
+      setConfirmOpen(true); // xoay secret khi đã có → confirm trước
+      return;
+    }
+    void doSaveSecret(); // chưa set → tạo luôn
+  }, [secret?.set, doSaveSecret]);
 
   const now = updatedAt ?? Date.now();
 
@@ -192,11 +267,19 @@ export function WorkersPanel() {
                 {workerTokenUrl || '…paste HUB PUBLIC BASE URL ở trên để sinh URL'}
               </p>
             </div>
-            {/* WORKER_SECRET — lấy trực tiếp trên UI (env console), mask cho tới khi reveal */}
+            {/* WORKER_SECRET — tạo/xoay trực tiếp trên UI (4.0-W), mask cho tới khi reveal */}
             <div className="rounded-md border bg-muted/40 px-3 py-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[11px] font-medium text-muted-foreground">
-                  WORKER_SECRET (từ env của hub/console — worker cần cùng giá trị)
+                <p className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+                  WORKER_SECRET (hub :3003 + worker cần cùng giá trị)
+                  {secret?.set && secret.source ? (
+                    <Badge
+                      variant="outline"
+                      className="h-4 border-emerald-600/40 bg-emerald-500/15 px-1.5 text-[10px] text-emerald-700 dark:border-emerald-500/50 dark:text-emerald-400"
+                    >
+                      {secret.source === 'runtime-file' ? 'tạo từ web' : 'env'}
+                    </Badge>
+                  ) : null}
                 </p>
                 <div className="flex items-center gap-1">
                   <Button
@@ -235,8 +318,9 @@ export function WorkersPanel() {
                 {!secret ? (
                   'Đang tải secret…'
                 ) : !secret.set ? (
-                  <span className="text-amber-700 dark:text-amber-400">
-                    WORKER_SECRET chưa set trong env console — đặt vào .env.local (khớp webhub :3003) rồi restart console.
+                  <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+                    <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    WORKER_SECRET chưa set — bấm “Tạo secret mới” để tạo ngay trên web (không cần restart).
                   </span>
                 ) : secretReveal ? (
                   secret.worker_secret
@@ -244,6 +328,39 @@ export function WorkersPanel() {
                   `••••••••••••••••••••${secret.worker_secret?.slice(-4) ?? ''} (bấm Hiện để xem)`
                 )}
               </p>
+              {/* Tạo / xoay secret trên web (4.0-W) */}
+              <div className="mt-2 grid gap-2 border-t pt-2 sm:grid-cols-[1fr_auto] sm:items-end sm:gap-3">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="worker-secret-custom"
+                    className="text-[11px] font-medium text-muted-foreground"
+                  >
+                    Giá trị tùy chọn (16–128 ký tự) — để trống → tự sinh ngẫu nhiên 64 hex
+                  </label>
+                  <Input
+                    id="worker-secret-custom"
+                    placeholder="(để trống — tự sinh ngẫu nhiên)"
+                    value={customSecret}
+                    onChange={(e) => setCustomSecret(e.target.value)}
+                    className="font-mono text-xs sm:text-sm"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <Button
+                  onClick={onRequestSaveSecret}
+                  className="h-10 sm:h-9"
+                  disabled={savingSecret}
+                  aria-label="Tạo WORKER_SECRET mới trên web"
+                >
+                  {savingSecret ? (
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <KeyRound className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                  )}
+                  {secret?.set ? 'Xoay secret mới' : 'Tạo secret mới'}
+                </Button>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">{CONNECTION_HINT}</p>
           </CardContent>
@@ -338,6 +455,38 @@ export function WorkersPanel() {
           </CardContent>
         </Card>
       </main>
+
+      {/* Confirm xoay secret khi đã có secret đang dùng (4.0-W) */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xoay WORKER_SECRET mới?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Secret mới được áp dụng NGAY trên hub :3003 (không cần restart). Worker đang kết nối
+              sẽ 401 ở lần fetch token kế cho tới khi cập nhật secret mới vào form setup của nó.
+              Worker local trong sandbox này sẽ tự nhận secret mới qua config file.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingSecret}>Huỷ</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={savingSecret}
+              onClick={(e) => {
+                e.preventDefault();
+                void doSaveSecret();
+              }}
+            >
+              {savingSecret ? (
+                <>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" /> Đang lưu…
+                </>
+              ) : (
+                'Xoay secret'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
