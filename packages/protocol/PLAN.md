@@ -10,7 +10,7 @@ Hợp đồng duy nhất giữa dev-console ↔ webhub ↔ worker. Package thu�
 1. **`reasoning_blocks` là reserved field từ draft v1** — dù MVP luôn gửi `undefined` (`clear_thinking: true` mặc định, D2). KHÔNG được bỏ khỏi schema.
 2. **JobPayload phải có `tenant_id` ngay từ draft** — MVP dùng `'default'`. Mọi key StateStore/Redis phải có prefix `tenant:{tenant_id}:` (D3), ví dụ: `tenant:{tid}:conv:{cid}:reasoning`, `tenant:{tid}:job:{jid}`, `tenant:{tid}:conv:{cid}:messages`. KHÔNG dùng key không prefix.
 3. **Cancellation phải nằm trong protocol v1**: user disconnect → hub gửi `job.cancel {job_id}` → worker `AbortController.abort()` → zsdk stream abort → worker gửi `job.error{ type: 'cancelled' }`.
-4. **T1-a-1 FROZEN NGAY theo lệnh chủ dự án Đợt 2 (không chờ G2)** — nội dung freeze xem mục bên dưới. **T1-a-2 (shape reasoning) chờ chủ dự án duyệt kết quả G2** (đã debug xong — xem mục "Kết quả G2 debug").
+4. **T1-a-1 FROZEN (Đợt 2) + T1-a-2 FROZEN (Đợt 2-final, chủ dự án đã duyệt với 2 điều chỉnh)** — nội dung freeze xem hai mục bên dưới. Wire công khai = upstream nguyên bản; mọi tuyên bố "thinking works" phải ghi nhãn `mock-verified` hoặc `real-upstream-verified` (không được ghi "verified" chung chung).
 5. `PROTOCOL_VERSION` nằm ở `src/index.ts` (stub đã tạo ở T0-a).
 
 ## T1-a-1 — FROZEN (Đợt 2, chốt bởi chủ dự án)
@@ -130,12 +130,32 @@ Phương pháp: đọc `/etc/.z-ai-config` → curl thẳng endpoint bằng đú
 | G2-5 | zsdk 0.0.18 sạch | Grep toàn bộ package: **KHÔNG có `glm-4-plus` hay model nào hardcoded, KHÔNG có fallback model logic**. Model truyền thẳng từ caller. `thinking` mặc định `{type:'disabled'}` nếu không truyền. `stream:true` → trả thẳng `response.body` (ReadableStream<Uint8Array>, không parse). |
 | G2-6 | Shape chunk thật (xác nhận) | Chunk: `{id, created, object:"chat.completion.chunk", model, choices:[{index:0, delta:{role?, content}}]}`. Chunk cuối: `finish_reason:"stop"` + **`usage` nhúng ngay trong chunk cuối**. Kết thúc: dòng `[DONE]`. |
 
-### Hàm ý cho T1-a-2 (chờ chủ dự án duyệt)
+### Hàm ý cho T1-a-2 (ĐÃ DUYỆT — Đợt 2-final, kèm 2 điều chỉnh)
 1. Wire pass-through (F4) là lựa chọn ĐÚNG và an toàn: mọi hop đều không hiểu cũng không cần hiểu nội dung chunk.
 2. `JobPayload.model` phải là **pass-through string tự do** (không enum) — vì môi trường khác nhau phục vụ model khác nhau; proxy có thể rewrite response model → KHÔNG dùng response.model để validate.
-3. Thinking UI (dev-console) phải thiết kế cho 2 chế độ: (a) sandbox/proxy — không bao giờ có `reasoning_content` → panel thinking hiện placeholder/không hiện; (b) production trên api.z.ai với key thật — `delta.reasoning_content` xuất hiện chuẩn OpenAI-compatible → panel hoạt động đầy đủ.
-4. `finish_reason` + `usage` nằm trong chunk cuối → `job.done` lấy từ chunk cuối, KHÔNG chờ event riêng.
-5. Production WebHub (VPS) cần API key Z.AI thật gọi thẳng `https://api.z.ai/api/paas/v4` — key sandbox không thay thế được (G2-2). Xác nhận lại T3-f: key pool ở WebHub.
+3. **[ĐIỀU CHỈNH — bỏ "2 modes UI"]** Dev-console KHÔNG làm 2 chế độ thinking tường minh. Panel thinking **chỉ hiển thị khi thực sự có chunk `delta.reasoning_content` đến**; nếu stream không có → ẩn panel (hoặc placeholder "Upstream không trả reasoning"). Tự động theo dữ liệu, không config.
+4. `finish_reason` + `usage` nằm trong chunk cuối → xem F6: **worker** scan metadata tối thiểu để gửi `job.done`; hub giữ byte-blind.
+5. Production WebHub (VPS) cần API key Z.AI thật gọi thẳng `https://api.z.ai/api/paas/v4` — key sandbox không thay thế được (G2-2). Xác nhận lại T3-f: key pool ở WebHub. **E2E thinking = BLOCKED cho đến khi owner cấp key thật cho VPS** (xem bảng blocker trong PLANS.md log [v4]).
+
+## T1-a-2 — FROZEN (Đợt 2-final, chủ dự án duyệt với 2 điều chỉnh)
+
+| # | Hạng mục | Nội dung FROZEN |
+|---|---|---|
+| F6 | Metadata scan (ai phát hiện `[DONE]`/`finish_reason`?) | **Worker** scan SSE tối thiểu: chỉ tìm `data: [DONE]`, `finish_reason`, `usage` để gửi `job.done`. KHÔNG đụng vào `reasoning_content`/`content` — chỉ đọc metadata. Bytes vẫn được relay NGUYÊN XI song song (tee). **Hub giữ byte-blind hoàn toàn** — metering/logging lấy từ frame `job.done`, không tự parse SSE. |
+| F7 | Thinking UI | Bỏ "2 modes". Dev-console hiển thị thinking panel tự động: có chunk `delta.reasoning_content` → hiện + render; không có → ẩn/placeholder "Upstream không trả reasoning". Không cần config, không env switch UI. |
+| F8 | Adapter upstream config | `UPSTREAM=proxy` (sandbox — proxy nội bộ, KHÔNG bao giờ có reasoning; chỉ test transport/lifecycle/queue/cancellation) và `UPSTREAM=real` (VPS — `ZAI_API_KEY` + base `https://api.z.ai/api/paas/v4`, thinking enabled). **E2E thinking chỉ chạy với `UPSTREAM=real` trên VPS.** |
+| F9 | `response.model` | Adapter **KHÔNG bao giờ** dùng `response.model` để quyết định bất cứ gì — chỉ log. Tránh phụ thuộc hành vi rewrite của proxy. |
+
+**Quy tắc nhãn xác minh (bắt buộc trong mọi tài liệu):** mọi tuyên bố "thinking works / reasoning hiển thị" phải ghi rõ `mock-verified` (đã test qua mock SSE) hoặc `real-upstream-verified` (đã test với upstream thật có reasoning — hiện CHƯA có gì đạt nhãn này; blocked chờ key thật cho VPS). Prototype thinking panel + dev-console mock = `mock-verified`.
+
+## Blocker E2E thinking (Đợt 2-final — chốt là BLOCKER production, không block code defensive)
+
+| Giai đoạn | Cần gì | Trạng thái |
+|---|---|---|
+| Dev/unit test adapter | Mock SSE đủ shape `reasoning_content` | ✅ Làm được ngay |
+| E2E trong sandbox | Proxy nội bộ — KHÔNG bao giờ có reasoning | ❌ Không thể (vĩnh viễn, ở sandbox này) |
+| E2E với upstream thật | Key Z.AI tier có thinking | ❌ BLOCKED — chờ owner cấp key |
+| Production verification | Key Z.AI thật trên VPS hub (env `ZAI_API_KEY`, KHÔNG inject vào sandbox) | ❌ BLOCKED — chờ owner cấp key |
 
 ## DoD T1-a-1 (FROZEN — làm ngay, không chờ)
 - `src/job.ts`: ChatMessage, JobPayload (có `tenant_id`, `reasoning_blocks` reserved), ReasoningBlock, WorkerCapabilities — pass-through `model: string` tự do.
@@ -144,10 +164,11 @@ Phương pháp: đọc `/etc/.z-ai-config` → curl thẳng endpoint bằng đú
 - `bun run lint` pass; test roundtrip: sample frame → parse(schema) → encode → parse lại khớp; binary envelope roundtrip khớp bytes.
 - Cập nhật trạng thái trong PLANS.md + ghi nhật ký vào đây.
 
-## DoD T1-a-2 (BLOCKED — chờ chủ dự án duyệt kết quả G2)
-- Chốt shape `reasoning_blocks` serialization chi tiết (đã có dữ liệu G2: hiện không có reasoning qua proxy — shape chỉ quan trọng cho production).
-- Xác nhận với owner: chấp nhận DEPRECATED custom events, wire = upstream nguyên bản.
-- Sau khi owner duyệt → đánh dấu T1-a done trong PLANS.md.
+## DoD T1-a-2 (FROZEN Đợt 2-final — đã duyệt)
+- F6–F9 ghi đủ vào schema/spec: protocol exports scanner metadata (dùng cho worker), JobPayload không ràng buộc model, README adapter có UPSTREAM config.
+- Nhãn `mock-verified`/`real-upstream-verified` áp vào PLANS.md + dev-console PLAN (đã làm Đợt 2-final).
+- Đã chốt: E2E thinking BLOCKED chờ key thật cho VPS — ghi vào PLANS.md section 8 + log [v4].
 
 ## Nhật ký thực thi (agent ghi vào đây)
 - Đợt 2 (2026-11-13): G2 debug chạy xong (6 phát hiện G2-1…G2-6 ở trên). T1-a-1 FROZEN theo lệnh chủ dự án; T1-a-2 chờ duyệt. Chưa push (chờ PAT mới tối thiểu scope).
+- Đợt 2-final (2026-11-13): Chủ dự án duyệt T1-a-2 với 2 điều chỉnh (F6 worker scan metadata — hub byte-blind; F7 bỏ 2 modes UI). F8 UPSTREAM config, F9 response.model log-only. Nhãn mock-verified/real-upstream-verified bắt buộc. E2E thinking BLOCKED chờ key thật cho VPS (không block Đợt 3 — code defensive). Implement T1-a-1 (protocol package) do agent phiên này thực hiện trực tiếp, sau đó Đợt 3 bung 3 agent song song.

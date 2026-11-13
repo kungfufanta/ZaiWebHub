@@ -109,7 +109,7 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 | T0-c | spike | Dump shape thật của zsdk stream + thử biến thể model/thinking | T0-b pass | Chốt shape chunk + khả năng reasoning | **done — có finding lớn (xem section 9)** |
 | T1-a | packages/protocol | Types + zod: WS frames, JobPayload (có `tenant_id`, `reasoning_blocks` reserved), ReasoningBlock, capabilities, **binary envelope codec job.chunk (F4)**; `PROTOCOL_VERSION = 1`. **T1-a-1 FROZEN (Đợt 2) — làm ngay; T1-a-2 (shape reasoning) chờ owner duyệt G2** | T0-a, **G1 PASS** | roundtrip test pass (JSON + binary envelope) | **T1-a-1 frozen — in-progress; T1-a-2 blocked chờ owner** |
 | T1-b | packages/zai-adapter | `streamChat()` trả **`ReadableStream<Uint8Array>` RAW pass-through** (bỏ AsyncGenerator/toSSE theo lệnh Đợt 2) + reasoning utils + AbortSignal | T1-a-1 | Smoke: raw bytes liền mạch, có `[DONE]`, TTFB < 5s | todo |
-| T1-c | apps/dev-console | UI harness. **Nửa mock: DONE** (UI + mock SSE đúng contract). Nửa còn lại: trỏ vào adapter thật | T1-b (nửa 2) | Mock: PASS nghiệm thu browser | **mock done / adapter-wiring todo** |
+| T1-c | apps/dev-console | UI harness. **Nửa mock: DONE (`mock-verified` — NOT real-upstream-verified)** (UI + mock SSE). Nửa còn lại: trỏ vào adapter/webhub thật | T1-b (nửa 2) | Mock: PASS nghiệm thu browser (`mock-verified`) | **mock done (`mock-verified`) / adapter-wiring todo** |
 | T2-a | apps/worker | WS client boot qua instrumentation.ts: connect, auth token TTL, register capabilities, heartbeat 15s, reconnect backoff | T1-a | Hub dev thấy worker register | todo |
 | T2-b | apps/worker | Job executor: dispatch→ack→chunk*→done/error; cancel AbortController; backpressure bufferedAmount | T1-b, T2-a | E2E 1 job qua hub dev; cancel OK | todo |
 | T3-a | apps/webhub | WS hub server (Hono + ws) + worker registry + heartbeat timeout 45s | T1-a | 2 worker connect; chết 1 → registry cập nhật | todo |
@@ -152,11 +152,13 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 
 ## 8. Rủi ro & lưu ý
 
-1. **zsdk gateway sandbox route cứng về glm-4-plus, không emit reasoning_content** (T0-c) → giai đoạn dev không E2E-test được thinking thật; phải test qua mock + verify lại trên prod key/model khác. Adapter vẫn PHẢI handle `reasoning_content` (code path đủ), chỉ là không chạy được thật ở đây.
+1. **zsdk gateway sandbox route cứng về glm-4-plus, không emit reasoning_content** (T0-c + G2 curl) → giai đoạn dev không E2E-test được thinking thật; phải test qua mock + verify lại trên VPS với `UPSTREAM=real` + key thật. Adapter vẫn PHẢI handle `reasoning_content` (code path defensive), chỉ là không chạy được thật ở đây.
 2. zsdk trả ReadableStream raw SSE — mọi code giả định AsyncIterable-of-objects phải bỏ (đã cập nhật T1-b scope).
 3. SSE POST dài qua Caddy/XTransformPort có thể bị buffer → verify ngay sau T3-c (`curl -N`).
 4. WebHub RAM với nhiều stream in-flight (~50–500KB/stream) → MVP chấp nhận, theo dõi ở T4-c.
 5. **Bảo mật**: PAT cũ ĐÃ LỘ trong hội thoại — KHÔNG dùng lại; chủ dự án cần revoke/rotate ngay, tạo PAT mới fine-grained (chỉ repo này, chỉ contents:read+write, expiry ngắn). Không commit token vào repo; không ghi token vào git config vĩnh viễn. Cho đến khi có PAT mới, mọi commit chỉ nằm local.
+6. **(Đợt 2-final) E2E thinking = BLOCKER production chờ key Z.AI thật cho VPS** (env `ZAI_API_KEY`, KHÔNG inject vào sandbox). KHÔNG block Đợt 3 — mọi tầng code defensive (worker relay nếu thấy reasoning, hub byte-blind, UI tự hiện panel).
+7. **(Đợt 2-final) Nhãn xác minh bắt buộc**: mọi tuyên bố "thinking works" phải ghi `mock-verified` hoặc `real-upstream-verified`. Prototype thinking panel chưa bao giờ nhận reasoning thật từ upstream (proxy strip) — mọi số liệu "TTFB 40ms / 230 events / 1.189 ký tự suy luận" của dev-console mock là `mock-verified`.
 
 ---
 
@@ -207,3 +209,24 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 - Non-stream glm-4.6: response KHÔNG có `reasoning_content` dù thinking enabled.
 
 **Kết quả hành chính:** T1-a-1 FROZEN → cập nhật `packages/protocol/PLAN.md` + `packages/zai-adapter/README.MD` (API mới) + các PLAN liên quan + Task Board. **T1-a-2 BLOCKED chờ chủ dự án duyệt** các hàm ý G2 (5 điểm trong protocol PLAN). Commit local; chưa push — chờ PAT mới tối thiểu scope (risk #5).
+
+### [v4] Đợt 2-final — Owner review G2 + T1-a-2 FROZEN + launch Đợt 3 (2026-11-13)
+
+**Kết luận owner về G2:** proxy nội bộ KHÔNG đại diện production (rewrite model + strip reasoning); **thinking mode chưa từng được E2E test thật** — prototype thinking panel + adapter reasoning path đều chỉ là mock-verified. Điểm này quan trọng hơn việc G2 pass.
+
+**T1-a-2 FROZEN với 2 điều chỉnh (chi tiết F6–F9 trong `packages/protocol/PLAN.md`):**
+- **F6** — Worker scan SSE tối thiểu (chỉ `finish_reason`/`usage`/`[DONE]`) để gửi `job.done`; KHÔNG đụng content/reasoning; hub BYTE-BLIND hoàn toàn, metering từ `job.done`.
+- **F7** — Bỏ "thinking UI 2 modes": panel tự hiện khi có `delta.reasoning_content`, ẩn/placeholder khi không có.
+- **F8** — Adapter `UPSTREAM=proxy|real`; sandbox chỉ `proxy`; E2E thinking chỉ trên VPS với `UPSTREAM=real`.
+- **F9** — `response.model` chỉ log, không validate.
+- Nhãn `mock-verified` / `real-upstream-verified` bắt buộc trong mọi tài liệu; E2E thinking = BLOCKER production chờ key Z.AI thật cho VPS (không block Đợt 3).
+
+**T3-f security baseline:** verify đủ 5 điểm DoD trong `apps/webhub/PLAN.md` — OK, không cần sửa.
+
+**PAT (lần nhắc thứ 3 — lần cuối):** revoke PAT cũ NGAY (Settings → Developer settings → Personal access tokens → Delete). Tạo PAT fine-grained mới: chỉ repo `kungfufanta/ZaiWebHub`, permission `Contents: Read and write`, expiry 30–90 ngày. KHÔNG push bằng PAT cũ dù 1 lần. 3 commit local (`b4f9b6c`, `b6bdbdb`, `947269f`) chờ push.
+
+**Đợt 3 — LAUNCHED (2026-11-13):** 3 agent song song, không block bởi thinking (code defensive):
+- **3-a**: `packages/zai-adapter` (T1-b) + `apps/worker` (T2-a, T2-b) — port 3004.
+- **3-b**: `apps/webhub` (T3-a…T3-e) — port 3003.
+- **3-c**: `apps/dev-console` (T1-c nửa 2: ghép adapter thật + wire mới upstream-native; chuẩn bị T4-a) — port 3005.
+Protocol package (T1-a-1) implement trực tiếp bởi agent phiên này TRƯỚC khi bung Đợt 3.

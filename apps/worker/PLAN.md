@@ -19,6 +19,7 @@ HUB_URL=ws://localhost:3003/worker   # dev trong sandbox; prod: wss://hub.exampl
 WORKER_TOKEN=...                     # short-lived token do hub cấp (T3-f): TTL ~60s, gắn tenant_id + capabilities
 TENANT_ID=default                    # D3: worker gắn tenant
 MODE=worker | relay                  # mặc định worker
+UPSTREAM=proxy | real                # F8: proxy (sandbox, zsdk đọc /etc/.z-ai-config) | real (VPS: ZAI_API_KEY + ZAI_BASE_URL)
 PORT=3004                            # http health check (GET /api/health)
 WORKER_ID=...                        # mặc định: uuid + hostname
 ```
@@ -27,7 +28,7 @@ WORKER_ID=...                        # mặc định: uuid + hostname
 1. boot (instrumentation.ts) → mở WS tới `HUB_URL`.
 2. gửi `worker.register` `{ capabilities: { worker_id, tenant_id, models: ['glm-5.3'], concurrency, protocol_version, version }, token }`.
 3. heartbeat mỗi 15s (`worker.heartbeat` kèm `inflight`).
-4. nhận `job.dispatch` → trả `job.ack` NGAY → chạy `streamChat()` của zai-adapter → pipe NGUYÊN bytes (ReadableStream<Uint8Array>) thành `job.chunk` WS binary envelope `[16B job_id][4B seq][SSE bytes]` (KHÔNG parse — F4 Đợt 2) → chunk cuối có `finish_reason` + `usage` → `job.done` | `job.error`.
+4. nhận `job.dispatch` → trả `job.ack` NGAY → chạy `streamChat()` của zai-adapter → pipe NGUYÊN bytes (ReadableStream<Uint8Array>) thành `job.chunk` WS binary envelope `[16B job_id][4B seq][SSE bytes]` (KHÔNG parse — F4 Đợt 2). **Song song (F6): feed mọi byte vào `createSseMetadataScanner()` của protocol** — scanner chỉ đọc `finish_reason`/`usage`/`data: [DONE]`, KHÔNG đụng content/reasoning → khi scanner thấy kết thúc → gửi `job.done` (finish_reason + usage từ scanner). Nếu stream đóng mà KHÔNG có `[DONE]`/`finish_reason` (lỗi giữa chừng) → `job.error`.
 5. nhận `job.cancel` → `AbortController.abort()` → dừng zsdk → `job.error{ type: 'cancelled' }` → nhận job mới.
 6. WS đứt → reconnect backoff 1s→2s→4s… (max 30s, có jitter). Job đang dở: hub lo (at-most-once), worker drop sạch, không tự retry.
 

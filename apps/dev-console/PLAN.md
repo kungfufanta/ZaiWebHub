@@ -1,7 +1,8 @@
 # apps/dev-console — PLAN (Task T1-c, T4-a)
 
-Next.js App Router (port 3000 trong sandbox — app duy nhất browser chạm tới).
-Chat UI CÓ BỘ NHỚ hội thoại, dùng để kiểm chứng dòng stream prompt → thinking → answer KHÔNG ĐỨT.
+Next.js App Router. Chat UI CÓ BỘ NHỚ hội thoại, dùng để kiểm chứng dòng stream prompt → thinking → answer KHÔNG ĐỨT.
+
+> **Port sandbox (Đợt 2-final):** dev-console chạy **port 3005** (`next dev -p 3005`) — port 3000 đang là my-project prototype (mặt hiển thị user trong preview panel). Khi hạ tầng chạy ổn, owner-session agent sẽ switch port 3000 sang dev-console. Browser chạm dev-console qua agent-browser local; user thấy harness E2E qua prototype trên :3000 (đã có toggle "Via WebHub").
 
 ## Nguồn tham khảo (prototype sandbox my-project — ĐÃ CHẠY ĐƯỢC, copy chứ không viết lại)
 - UI chat đầy đủ: `src/components/chat/*` (thinking-panel collapsible, event-log, stream-stats-bar, composer, message-list, session-sidebar)
@@ -23,8 +24,10 @@ Chat UI CÓ BỘ NHỚ hội thoại, dùng để kiểm chứng dòng stream pr
 - Bộ nhớ hội thoại chuyển lên hub qua `conversation_id` (T3-d) — localStorage chỉ còn cache hiển thị.
 
 ## Checklist nghiệm thu chung (copy vào PR khi T4-a xong)
-- [ ] `thinking_start → thinking_delta* → answer_start → answer_delta* → finish → [DONE]` đầy đủ, đúng thứ tự
-- [ ] TTFB < 5s với glm-5.3, thinking enabled
+> **Nhãn bắt buộc (Đợt 2-final):** mỗi dòng checklist khi hoàn thành phải ghi `mock-verified` hay `real-upstream-verified`. Sandbox chỉ đạt được `mock-verified` cho thinking; `real-upstream-verified` chỉ đạt được trên VPS với `UPSTREAM=real` + key thật.
+- [ ] Wire = upstream nguyên bản: `data: {chunk OpenAI}` có `delta.reasoning_content` (nếu có) → `delta.content` → chunk cuối `finish_reason` + `usage` → `data: [DONE]` — đủ, đúng thứ tự (custom events thinking_*/answer_* đã DEPRECATED)
+- [ ] Thinking panel TỰ ĐỘNG hiện khi có `delta.reasoning_content`, ẩn/placeholder khi không có (F7 — không config) — `mock-verified` (sandbox không có reasoning thật)
+- [ ] TTFB < 5s với thinking enabled — `mock-verified` (sandbox: glm-4-plus qua proxy); `real-upstream-verified` chờ VPS
 - [ ] Prompt ý tưởng dài: không đứt, không lặp, không mất delta
 - [ ] Stop giữa chừng: user ngừng nhận, `job.cancel` hoạt động (không worker treo)
 - [ ] Lỗi (sai key/model) → `event:error` trong stream + `[DONE]`, UI hiển thị rõ
@@ -35,4 +38,4 @@ Chat UI CÓ BỘ NHỚ hội thoại, dùng để kiểm chứng dòng stream pr
 - CẤM ghi port/địa chỉ tuyệt đối trong URL (kể cả WebSocket từ browser).
 
 ## Nhật ký thực thi (agent ghi vào đây)
-- [T1-c-mock] Đã dựng apps/dev-console hoàn chỉnh ở chế độ MOCK (chưa ghép adapter/hub): UI chat + bộ nhớ phiên copy từ prototype my-project; thêm route `POST /api/mock-chat` phát SSE đúng bảng contract của packages/protocol (`thinking_start → thinking_delta* → answer_start → answer chunks OpenAI-format → finish → [DONE]`), nhánh `error_test` và abort/stop qua AbortController; endpoint client mặc định `/api/mock-chat`, ghi đè được bằng `NEXT_PUBLIC_CHAT_ENDPOINT` (chuẩn bị sẵn cho T4-a). Chi tiết đầy đủ: `agent-ctx/T1-c-mock-coder.md`.
+- [T1-c-mock] (**mock-verified**) Đã dựng apps/dev-console hoàn chỉnh ở chế độ MOCK (chưa ghép adapter/hub): UI chat + bộ nhớ phiên copy từ prototype my-project; thêm route `POST /api/mock-chat` phát SSE đúng bảng contract của packages/protocol (`thinking_start → thinking_delta* → answer_start → answer chunks OpenAI-format → finish → [DONE]`), nhánh `error_test` và abort/stop qua AbortController; endpoint client mặc định `/api/mock-chat`, ghi đè được bằng `NEXT_PUBLIC_CHAT_ENDPOINT` (chuẩn bị sẵn cho T4-a). Chi tiết đầy đủ: `agent-ctx/T1-c-mock-coder.md`. **Lưu ý Đợt 2-final: mock này phát wire contract CŨ (custom events) — khi ghép adapter/webhub thật, wire là upstream nguyên bản; UI parse `delta.reasoning_content` trực tiếp; panel thinking tự động theo F7. Chỉnh route mock cho phát wire mới (upstream-native) trước khi dán nhãn mock-verified lại.**

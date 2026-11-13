@@ -28,6 +28,7 @@ Dev chạy port 3003 trong sandbox; prod chạy trên VPS chính.
 - Header bắt buộc: `Content-Type: text/event-stream`, `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`, `Connection: keep-alive`.
 - Relay ZERO-BUFFER (F4): nhận `job.chunk` (WS binary envelope `[16B job_id][4B seq][bytes]`) → decode header → `controller.enqueue()` NGAY payload bytes nguyên bản — KHÔNG parse, KHÔNG re-stringify.
 - Định dạng SSE cho user = **upstream nguyên bản** (OpenAI-compatible chunks + `[DONE]`) — theo contract pass-through trong `packages/protocol/PLAN.md` (bảng cũ thinking_*/answer_* đã DEPRECATED). Lỗi trước-stream → đúng 1 frame `event: error` (hằng `SSE_ERROR_EVENT`) rồi đóng sạch.
+- **(F6 Đợt 2-final) Hub BYTE-BLIND hoàn toàn**: hub KHÔNG parse SSE để tìm finish/DONE. Kết thúc job được phát hiện bởi **worker** (metadata scan) qua frame `job.done`/`job.error`. Metering/log của hub lấy từ `job.done` (finish_reason, usage). Sau `job.done` → hub tự flush `[DONE]` nếu worker chưa relay đủ, rồi đóng response.
 - User disconnect (request signal aborted):
   - job CHƯA có chunk → thu hồi/hủy khỏi dispatch (cho phép re-dispatch).
   - ĐÃ stream → gửi `job.cancel` cho worker, vẫn flush `[DONE]` cho sạch.
@@ -54,9 +55,9 @@ export interface StateStore {
 - User: env `TENANT_KEYS` = danh sách key phân tách bằng dấu phẩy. Format key: `zhb_<random>`.
 - Route khác → 404. Sai auth → 401 JSON `{ error: { message } }`.
 
-## T3-f — Security baseline (CHỐT bởi chủ dự án — DoD bắt buộc)
+## T3-f — Security baseline (CHỐT bởi chủ dự án — DoD bắt buộc; ĐÃ VERIFY đủ 5 điểm Đợt 2-final)
 - **Worker token: TTL ngắn (~60s), gắn `tenant_id` + capability list, rotate được. KHÔNG dùng token static dài hạn.**
-- **API key pool của Z.AI: WebHub giữ, KHÔNG đẩy xuống worker dưới dạng plaintext dài hạn.** Nếu buộc phải đẩy (vì worker gọi zsdk trực tiếp) → dùng short-lived token (~60s).
+- **API key pool của Z.AI: WebHub giữ, KHÔNG đẩy xuống worker dưới dạng plaintext dài hạn.** Nếu buộc phải đẩy (vì worker gọi zsdk trực tiếp) → dùng short-lived token (~60s). *(Đợt 2-final: worker tự gọi zsdk bằng config môi trường sandbox/VPS — key pool nằm ở env VPS cho `UPSTREAM=real`; sandbox dùng config /etc có sẵn.)*
 - **Job payload KHÔNG chứa secret của tenant khác** (dispatch theo tenant, không leak chéo).
 - **`reasoning_content` trong StateStore: TTL 24h (configurable)**, không log ra ngoài, chỉ WebHub process được đọc trực tiếp.
 - **`request_id`/`job_id` được log xuyên suốt; `reasoning_content` và API key TUYỆT ĐỐI không xuất hiện trong log** (mọi logger phải redact 2 trường này).
