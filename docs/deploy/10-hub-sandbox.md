@@ -65,6 +65,8 @@ Console ở `:3000` là **Hub UI đầy đủ** (nav 3 tab, giữ nguyên chat p
 - Console lấy dữ liệu qua server-side proxy `/api/workers` → `HUB_INTERNAL_URL` (mặc định `http://127.0.0.1:3003`) kèm `WORKER_SECRET` từ env — **secret không bao giờ xuống client**.
 - Console cần env `WORKER_SECRET` + `HUB_INTERNAL_URL` trong `.env.local` (gitignored, KHÔNG commit).
 - `next.config.ts` đã có `allowedDevOrigins` (127.0.0.1 / localhost / *.space-z.ai) — thiếu nó, Next 16 chặn dev resource và hydration stall.
+- Owner lấy `WORKER_SECRET` trực tiếp trên tab `/workers` (nút Hiện/Copy — route server-side `/api/worker-secret`), không cần tra lại chat.
+- Tài liệu API đầy đủ của hub: [docs/api.md](../api.md) — chat SSE `/v1/chat/completions`, `/internal/worker-token`, `/internal/workers`, WS worker protocol, bảng mã lỗi.
 
 ## Bước 6 — Nhận worker remote (Loop 2)
 

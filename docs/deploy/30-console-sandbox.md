@@ -46,8 +46,11 @@ bun run scripts/build-compat.ts
 2. Trong box **Worker Connection Info**: paste **HUB PUBLIC BASE URL** (public URL của sandbox hub, vd `https://<hub-host>`) → UI sinh URL dạng:
    `{HUB_PUBLIC_BASE}/internal/worker-token?XTransformPort=3003`
 3. Bấm **Copy URL**.
-4. Mở worker sandbox → `:3000` → paste URL này + secret (`WORKER_SECRET` do owner cấp qua chat) vào form setup của worker.
-5. Tab Workers poll 5s — worker mới hiện badge **online** kèm inflight/total_jobs/heartbeat; tab **Stats** thấy số jobs tăng.
+4. **Copy WORKER_SECRET ngay trên UI** (box bên dưới): mặc định mask (`••••…` + 4 ký tự cuối), bấm **Hiện** để xem / **Copy** để copy. Giá trị đọc từ env `WORKER_SECRET` của console (route server-side `/api/worker-secret`) — phải khớp env của webhub :3003.
+5. Mở worker sandbox → `:3000` → paste URL này + secret vào form setup của worker.
+6. Tab Workers poll 5s — worker mới hiện badge **online** kèm inflight/total_jobs/heartbeat; tab **Stats** thấy số jobs tăng.
+
+> Tài liệu API đầy đủ của hub (chat SSE, worker-token, internal/workers, WS worker protocol): [docs/api.md](../api.md).
 
 ## Điểm chú ý UI
 

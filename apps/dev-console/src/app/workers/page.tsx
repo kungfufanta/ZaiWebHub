@@ -6,7 +6,7 @@
 // - Box "Worker Connection Info": owner paste HUB PUBLIC BASE URL → sinh URL
 //   {BASE}/internal/worker-token?XTransformPort=3003 để paste vào worker sandbox.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BrainCircuit, Check, Copy, RefreshCw, Server } from 'lucide-react';
+import { BrainCircuit, Check, Copy, Eye, EyeOff, RefreshCw, Server } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,7 +32,7 @@ const POLL_INTERVAL_MS = 5_000;
 const EMPTY_STATE_TEXT =
   'Chưa có worker nào — deploy worker sandbox và mở :3000 để kết nối';
 const CONNECTION_HINT =
-  'Mở worker sandbox → :3000 → paste URL này + secret (WORKER_SECRET do owner cấp qua chat) vào form setup của worker.';
+  'Mở worker sandbox → :3000 → paste URL này + secret (copy WORKER_SECRET bên dưới) vào form setup của worker.';
 
 export default function WorkersPage() {
   const { toast } = useToast();
@@ -41,6 +41,9 @@ export default function WorkersPage() {
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [hubBase, setHubBase] = useState('');
   const [copied, setCopied] = useState(false);
+  const [secret, setSecret] = useState<{ set: boolean; worker_secret: string | null } | null>(null);
+  const [secretReveal, setSecretReveal] = useState(false);
+  const [secretCopied, setSecretCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -66,6 +69,24 @@ export default function WorkersPage() {
   useEffect(() => {
     const saved = window.localStorage.getItem('hub_public_base');
     if (saved) setHubBase(saved);
+  }, []);
+
+  // WORKER_SECRET từ env console (server-side route) — owner copy cho worker khi onboard
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/worker-secret', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive && d && typeof d === 'object') {
+          setSecret({ set: Boolean(d.set), worker_secret: d.worker_secret ?? null });
+        }
+      })
+      .catch(() => {
+        if (alive) setSecret({ set: false, worker_secret: null });
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const workerTokenUrl = useMemo(() => buildWorkerTokenUrl(hubBase), [hubBase]);
@@ -95,6 +116,18 @@ export default function WorkersPage() {
     setHubBase(value);
     window.localStorage.setItem('hub_public_base', value);
   }, []);
+
+  const onCopySecret = useCallback(async () => {
+    if (!secret?.worker_secret) return;
+    try {
+      await navigator.clipboard.writeText(secret.worker_secret);
+      setSecretCopied(true);
+      setTimeout(() => setSecretCopied(false), 1500);
+      toast({ title: 'Đã copy WORKER_SECRET', description: 'Worker fetch /internal/worker-token với header X-Worker-Secret = giá trị này.' });
+    } catch {
+      toast({ title: 'Copy thất bại', description: 'Browser chặn clipboard — chọn secret bằng tay rồi Ctrl+C.' });
+    }
+  }, [secret, toast]);
 
   const now = updatedAt ?? Date.now();
 
@@ -179,6 +212,59 @@ export default function WorkersPage() {
               </p>
               <p className="break-all font-mono text-xs text-foreground sm:text-sm">
                 {workerTokenUrl || '…paste HUB PUBLIC BASE URL ở trên để sinh URL'}
+              </p>
+            </div>
+            {/* WORKER_SECRET — lấy trực tiếp trên UI (env console), mask cho tới khi reveal */}
+            <div className="rounded-md border bg-muted/40 px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-medium text-muted-foreground">
+                  WORKER_SECRET (từ env của hub/console — worker cần cùng giá trị)
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => setSecretReveal((v) => !v)}
+                    aria-label={secretReveal ? 'Ẩn WORKER_SECRET' : 'Hiện WORKER_SECRET'}
+                    disabled={!secret?.set}
+                  >
+                    {secretReveal ? (
+                      <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
+                    ) : (
+                      <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    {secretReveal ? 'Ẩn' : 'Hiện'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => void onCopySecret()}
+                    aria-label="Copy WORKER_SECRET"
+                    disabled={!secret?.set}
+                  >
+                    {secretCopied ? (
+                      <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                    ) : (
+                      <Copy className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    {secretCopied ? 'Đã copy' : 'Copy'}
+                  </Button>
+                </div>
+              </div>
+              <p className="mt-1 break-all font-mono text-xs text-foreground sm:text-sm">
+                {!secret ? (
+                  'Đang tải secret…'
+                ) : !secret.set ? (
+                  <span className="text-amber-700 dark:text-amber-400">
+                    WORKER_SECRET chưa set trong env console — đặt vào .env.local (khớp webhub :3003) rồi restart console.
+                  </span>
+                ) : secretReveal ? (
+                  secret.worker_secret
+                ) : (
+                  `••••••••••••••••••••${secret.worker_secret?.slice(-4) ?? ''} (bấm Hiện để xem)`
+                )}
               </p>
             </div>
             <p className="text-xs text-muted-foreground">{CONNECTION_HINT}</p>
