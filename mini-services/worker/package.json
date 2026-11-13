@@ -1,0 +1,14 @@
+{
+  "name": "@zaiwebhub/worker-mini",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZaiWebHub worker runtime as a standalone Bun mini-service (sandbox edition). Outbound WS to hub, no inbound. UI lives in the main Next.js app (:3000) and talks to this service via gateway ?XTransformPort=3005.",
+  "scripts": {
+    "dev": "bun --hot index.ts",
+    "start": "bun index.ts"
+  },
+  "dependencies": {
+    "z-ai-web-dev-sdk": "^0.0.18",
+    "zod": "^3.25.76"
+  }
+}

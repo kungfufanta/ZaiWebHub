@@ -1,0 +1,8 @@
+# Worker runtime config (contains WORKER_SECRET — NEVER commit)
+worker-config.json
+worker-config.json.tmp-*
+
+# Local logs
+*.log
+
+node_modules/

@@ -1,0 +1,20 @@
+{
+  "name": "zaiwebhub-hub-mini",
+  "version": "0.1.0-mini",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot index.ts",
+    "start": "bun index.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.4",
+    "hono": "^4.9.7",
+    "ws": "^8.18.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.22",
+    "@types/ws": "^8.18.1"
+  }
+}
