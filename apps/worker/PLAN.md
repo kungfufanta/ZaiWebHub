@@ -27,12 +27,12 @@ WORKER_ID=...                        # mặc định: uuid + hostname
 1. boot (instrumentation.ts) → mở WS tới `HUB_URL`.
 2. gửi `worker.register` `{ capabilities: { worker_id, tenant_id, models: ['glm-5.3'], concurrency, protocol_version, version }, token }`.
 3. heartbeat mỗi 15s (`worker.heartbeat` kèm `inflight`).
-4. nhận `job.dispatch` → trả `job.ack` NGAY → chạy `streamChat()` của zai-adapter → từng AdapterEvent đổi thành `job.chunk` (seq tăng dần) → kết thúc `job.done` | `job.error`.
+4. nhận `job.dispatch` → trả `job.ack` NGAY → chạy `streamChat()` của zai-adapter → pipe NGUYÊN bytes (ReadableStream<Uint8Array>) thành `job.chunk` WS binary envelope `[16B job_id][4B seq][SSE bytes]` (KHÔNG parse — F4 Đợt 2) → chunk cuối có `finish_reason` + `usage` → `job.done` | `job.error`.
 5. nhận `job.cancel` → `AbortController.abort()` → dừng zsdk → `job.error{ type: 'cancelled' }` → nhận job mới.
 6. WS đứt → reconnect backoff 1s→2s→4s… (max 30s, có jitter). Job đang dở: hub lo (at-most-once), worker drop sạch, không tự retry.
 
 ## Backpressure (bắt buộc)
-- Trước khi emit mỗi `job.chunk`: nếu `ws.bufferedAmount > 1MB` → tạm dừng đọc iterator adapter, chờ đến khi `bufferedAmount < 256KB` rồi mới đọc tiếp.
+- Trước khi emit mỗi `job.chunk`: nếu `ws.bufferedAmount > 1MB` → tạm dừng đọc ReadableStream của adapter, chờ đến khi `bufferedAmount < 256KB` rồi mới đọc tiếp.
 - Mục tiêu: RAM sandbox không phình khi hub/user chậm.
 
 ## MODE=relay (T4-d)
@@ -51,7 +51,7 @@ WORKER_ID=...                        # mặc định: uuid + hostname
 - Kill worker → hub đánh dấu chết trong <= 45s. Restart worker → reconnect không crash.
 
 ### T2-b — Job executor
-- E2E 1 job thật qua hub dev: prompt ý tưởng dài → `job.chunk` thinking → answer → `job.done` → user SSE nhận đủ (test cùng T3-c).
+- E2E 1 job thật qua hub dev: prompt ý tưởng dài → `job.chunk` raw SSE bytes nguyên bản → `job.done` → user SSE nhận nguyên bản upstream (test cùng T3-c).
 - Cancel: user disconnect → `job.cancel` nhận trong < 1s → adapter dừng → `job.error(cancelled)`.
 - Backpressure: tạm chặn đọc SSE phía user 30s → worker RAM ổn định, tiếp tục chạy sau khi mở.
 

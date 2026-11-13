@@ -90,7 +90,7 @@ Quy ước gateway sandbox:
 
 | Tài sản | Đường dẫn | Áp vào task nào |
 |---|---|---|
-| Route Z.AI proxy SSE: parse raw SSE từ zsdk ReadableStream, tách reasoning/content, event protocol, `[DONE]`, heartbeat 15s | `src/app/api/chat/route.ts` (264 dòng) | T1-b — tái cấu trúc thành `streamChat()` + `toSSE()` |
+| Route Z.AI proxy SSE: parse raw SSE từ zsdk ReadableStream, tách reasoning/content, event protocol, `[DONE]`, heartbeat 15s | `src/app/api/chat/route.ts` (264 dòng) | T1-b — chỉ giữ nguyên lý SSE client/abort/heartbeat; API mới = `streamChat()` trả `ReadableStream<Uint8Array>` RAW pass-through (bỏ toSSE — lệnh Đợt 2) |
 | SSE client parser + metrics (ttfbMs, sawFinish, sawDone, eventCount) | `src/lib/sse-client.ts`, `src/lib/chat-types.ts` | T1-c / dev-console (đã copy vào mock) |
 | Bộ nhớ hội thoại + UI đầy đủ | `src/hooks/use-chat-sessions.ts`, `src/components/chat/*` | Đã copy vào apps/dev-console (T1-c-mock) |
 
@@ -107,14 +107,14 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 | T0-a | repo | Khung monorepo: bun workspaces (bun chỉ là installer), tsconfig.base, stub protocol/zai-adapter/webhub(Hono)/worker(Next.js) | — | install + typecheck OK | **done** |
 | T0-b | spike | Spike sandbox: node/next version, HTTPS outbound, WS handshake (Node WebSocket, 3 target + loopback) | — | Kết luận transport | **done — PASS** |
 | T0-c | spike | Dump shape thật của zsdk stream + thử biến thể model/thinking | T0-b pass | Chốt shape chunk + khả năng reasoning | **done — có finding lớn (xem section 9)** |
-| T1-a | packages/protocol | Types + zod: WS frames, SSE events, JobPayload (có `tenant_id`, `reasoning_blocks` reserved), ReasoningBlock, capabilities; `PROTOCOL_VERSION = 1` | T0-a, **G1 PASS**, **CHỜ XÁC NHẬN CHỦ DỰ ÁN** | roundtrip test pass | **blocked — chờ owner** |
-| T1-b | packages/zai-adapter | `streamChat()` AsyncGenerator (input: ReadableStream raw SSE của zsdk) + `toSSE()` + reasoning utils + AbortSignal | T1-a | Smoke: dòng event liền mạch | todo |
+| T1-a | packages/protocol | Types + zod: WS frames, JobPayload (có `tenant_id`, `reasoning_blocks` reserved), ReasoningBlock, capabilities, **binary envelope codec job.chunk (F4)**; `PROTOCOL_VERSION = 1`. **T1-a-1 FROZEN (Đợt 2) — làm ngay; T1-a-2 (shape reasoning) chờ owner duyệt G2** | T0-a, **G1 PASS** | roundtrip test pass (JSON + binary envelope) | **T1-a-1 frozen — in-progress; T1-a-2 blocked chờ owner** |
+| T1-b | packages/zai-adapter | `streamChat()` trả **`ReadableStream<Uint8Array>` RAW pass-through** (bỏ AsyncGenerator/toSSE theo lệnh Đợt 2) + reasoning utils + AbortSignal | T1-a-1 | Smoke: raw bytes liền mạch, có `[DONE]`, TTFB < 5s | todo |
 | T1-c | apps/dev-console | UI harness. **Nửa mock: DONE** (UI + mock SSE đúng contract). Nửa còn lại: trỏ vào adapter thật | T1-b (nửa 2) | Mock: PASS nghiệm thu browser | **mock done / adapter-wiring todo** |
 | T2-a | apps/worker | WS client boot qua instrumentation.ts: connect, auth token TTL, register capabilities, heartbeat 15s, reconnect backoff | T1-a | Hub dev thấy worker register | todo |
 | T2-b | apps/worker | Job executor: dispatch→ack→chunk*→done/error; cancel AbortController; backpressure bufferedAmount | T1-b, T2-a | E2E 1 job qua hub dev; cancel OK | todo |
 | T3-a | apps/webhub | WS hub server (Hono + ws) + worker registry + heartbeat timeout 45s | T1-a | 2 worker connect; chết 1 → registry cập nhật | todo |
 | T3-b | apps/webhub | Dispatcher: direct push + queue overflow + visibility timeout 30s + ack | T3-a | Kill worker trước stream → re-dispatch OK | todo |
-| T3-c | apps/webhub | POST /v1/chat/completions: SSE zero-buffer; user disconnect → job.cancel | T1-a | `curl -N` đủ events + [DONE], không buffer | todo |
+| T3-c | apps/webhub | POST /v1/chat/completions: SSE zero-buffer **pass-through (F4 — ghi nguyên bytes từ job.chunk binary envelope)**; user disconnect → job.cancel | T1-a-1 | `curl -N` nhận SSE nguyên bản upstream (OpenAI chunks + `[DONE]`) không buffer | todo |
 | T3-d | apps/webhub | StateStore (có `getReasoning/saveReasoning` per D2) + Memory/Redis stub; key prefix `tenant:{tid}:` per D3 | T1-a | 2 lượt chat cùng conv → lượt 2 có đúng context | todo |
 | T3-e | apps/webhub | Auth: Bearer key cho `/v1/*`; worker token cấp hub | T3-a, T3-c | Sai key → 401; sai token → từ chối register | todo |
 | T3-f | apps/webhub | **Security baseline (chốt bởi chủ dự án)** — xem apps/webhub/PLAN.md | T3-a..T3-e | Grep log: không có reasoning_content/API key; token hết hạn đúng TTL | todo |
@@ -125,7 +125,7 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 
 ### Decision gates
 - **G1 — transport**: **PASS (T0-b)** → WS confirmed.
-- **G2 — chunk schema zsdk**: **CHỐT (T0-c)** — zsdk 0.0.18 trả `ReadableStream<Uint8Array>` raw SSE (KHÔNG phải AsyncIterable objects); chunk parsed dạng OpenAI `{id, created, object:"chat.completion.chunk", model, choices:[{index, delta:{role,content}, finish_reason, usage}]}` + `[DONE]`. **⚠️ reasoning_content KHÔNG xuất hiện ở gateway sandbox này (mọi model đều bị route về glm-4-plus)** — xem section 9.
+- **G2 — chunk schema zsdk**: **CHỐT (T0-c) + xác nhận thêm bằng curl trực tiếp (log [v3])** — zsdk 0.0.18 trả `ReadableStream<Uint8Array>` raw SSE (KHÔNG phải AsyncIterable objects); chunk parsed dạng OpenAI `{id, created, object:"chat.completion.chunk", model, choices:[{index, delta:{role,content}, finish_reason, usage}]}` + `[DONE]`. **⚠️ reasoning_content KHÔNG xuất hiện ở gateway sandbox này (mọi model đều bị route về glm-4-plus)** — xem section 9 + log [v3].
 - **G3** (sau T3-d): preserved thinking có bật mặc định không → nếu có, Redis bắt buộc trên prod.
 
 ---
@@ -135,9 +135,9 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 **Đợt 1 (tuần tự có kiểm soát — CHỐT bởi chủ dự án):**
 1. T0-b BẮT BUỘC làm trước, đúng thứ tự a→b→c→(d) — **DONE, PASS**.
 2. Song song với T0-b: T0-a (done) + T1-c-mock UI dev-console (done).
-3. T1-a CHỜ kết quả T0-b rồi mới freeze — **T0-b đã PASS nhưng T1-a vẫn chờ xác nhận chủ dự án trước khi start.**
+3. **T1-a freeze — LỆNH ĐỢT 2 của chủ dự án: T1-a-1 freeze NGAY (không chờ):** transport WS + frame types + `job.cancel` + `job.chunk` = raw SSE bytes (Uint8Array, không parse-rồi-stringify) + `reasoning_blocks` reserved + tenant prefix. **T1-a-2 (shape reasoning) chờ owner duyệt kết quả G2 debug.**
 
-**Đợt 2 (sau khi owner OK T1-a):** 3 agent song song:
+**Đợt tiếp theo (sau khi owner duyệt T1-a-2):** 3 agent song song:
 - Agent A: T1-b (adapter lib — tái cấu trúc từ route.ts prototype, nhớ: input là ReadableStream raw SSE).
 - Agent B: T2-a + T3-a (2 bên của WS).
 - Agent C: T3-d + T3-e (+ T3-f thiết kế interface).
@@ -185,3 +185,25 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 4. **⚠️ FINDING LỚN**: yêu cầu `model:"glm-5.3"` (+ biến thể `glm-4.6`, `glm-4.5`, no-model) + `thinking:{type:"enabled"}` — upstream LUÔN trả `model:"glm-4-plus"` và **0 chunk có `reasoning_content`**. Gateway sandbox này route cứng về glm-4-plus, không sinh reasoning stream. Adapter vẫn phải code path reasoning (đúng protocol), nhưng verify thinking thật phải chờ prod key/model khác hoặc đổi tier. TTFB thực đo: ~590ms; tổng ~1.5s cho câu ngắn.
 
 **Hệ quả G2 cho T1-a/T1-b**: schema `job.chunk.kind='thinking'` GIỮ NGUYÊN (reserved, prod sẽ dùng), nhưng adapter phải parse raw SSE từ ReadableStream và KHÔNG được giả định có reasoning trong môi trường dev. Việc freeze T1-a vẫn CHỜ xác nhận chủ dự án.
+
+---
+
+## 10.3. Log [v3] — Đợt 2: G2 debug bằng curl trực tiếp + T1-a-1 FROZEN (2026-11-13)
+
+**Lệnh chủ dự án (Đợt 2):** chạy 3 bước debug G2 trước khi chốt T1-a-2 (báo cáo, không in key); SONG SONG freeze T1-a-1 ngay không chờ G2.
+
+**T1-a-1 FROZEN (5 điểm — chi tiết tại `packages/protocol/PLAN.md` mục T1-a-1):** F1 transport WS (text=JSON control, binary=stream data); F2 frame types + `job.cancel` trong v1; F3 cancellation spec; F4 `job.chunk` payload = raw SSE bytes Uint8Array NGUYÊN XI (envelope `[16B job_id uuid][4B seq BE][SSE bytes]`) — zero-parse end-to-end; F5 reserved fields `reasoning_blocks` + `tenant_id` + tenant prefix keys. Hệ quả F4: SSE cho user = upstream nguyên bản, custom events `thinking_start/...` DEPRECATED khỏi wire công khai (dev-console tự đọc `delta.reasoning_content`).
+
+**3 bước debug G2 (curl, đúng bộ header zsdk: Bearer apiKey + X-Z-AI-From: Z + X-Chat-Id + X-User-Id + X-Token):**
+1. **G2-1 baseUrl**: `/etc/.z-ai-config` → `https://internal-api.z.ai/v1` = **proxy nội bộ**, KHÔNG phải api.z.ai. (zsdk load: cwd → home → /etc; sandbox chỉ có /etc.)
+2. **G2-2 key sandbox vs public api.z.ai**: `api.z.ai/v1/chat/completions` → 404 (path không tồn tại); `api.z.ai/api/paas/v4/chat/completions` → **401 身份验证失败** → outbound HTTPS/TLS PASS nhưng key sandbox chỉ hợp lệ trên proxy nội bộ. Production WebHub phải dùng key Z.AI thật.
+3. **G2-3 grep zsdk 0.0.18**: toàn package KHÔNG có `glm-4-plus` hay model nào hardcoded, KHÔNG có fallback logic — model pass-through từ caller; `thinking` mặc định `disabled`; `stream:true` trả thẳng `response.body`. → Rewriting model là hành vi của **proxy nội bộ**, không phải zsdk.
+
+**Xác nhận stream (glm-4.6 và glm-5.3, thinking enabled, prompt suy luận):** 534 chunks → 0 chunk `delta.reasoning_content`, 100% `delta.content`, mọi chunk `model:"glm-4-plus"`. Khớp 100% với T0-c (section 10).
+
+**Phát hiện bổ sung mới so với T0-c:**
+- Chunk cuối chỗ `usage` ở curl này nằm **top-level** (`{choices:[...], usage:{...}}`) — T0-c ghi nhận nằm TRONG choice. → Shape biến đổi theo run/path: parser `job.done` phải đọc tolerant: `chunk.usage ?? chunk.choices[0].usage`.
+- `finish_reason:"stop"` + `delta:{role,content:""}` trong cùng chunk cuối.
+- Non-stream glm-4.6: response KHÔNG có `reasoning_content` dù thinking enabled.
+
+**Kết quả hành chính:** T1-a-1 FROZEN → cập nhật `packages/protocol/PLAN.md` + `packages/zai-adapter/README.MD` (API mới) + các PLAN liên quan + Task Board. **T1-a-2 BLOCKED chờ chủ dự án duyệt** các hàm ý G2 (5 điểm trong protocol PLAN). Commit local; chưa push — chờ PAT mới tối thiểu scope (risk #5).

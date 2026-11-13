@@ -3,72 +3,69 @@
 ## Vai trò
 Lib DUY NHẤT được phép nói chuyện với Z.AI qua `z-ai-web-dev-sdk` (zsdk):
 - gọi `chat.completions.create({ stream: true, thinking })`
-- biến AsyncIterable chunk thô của zsdk thành dòng event chuẩn `AdapterEvent`
-- serialize `AdapterEvent` → SSE wire format (bảng contract trong `packages/protocol/PLAN.md`)
+- **pass-through RAW SSE bytes**: trả `ReadableStream<Uint8Array>` nguyên bản từ upstream — KHÔNG parse, KHÔNG re-emit (chốt Đợt 2, xem `packages/protocol/PLAN.md` mục T1-a-1 FROZEN / F4)
 - tiện ích preserved thinking (serialize/parse ReasoningBlock)
 
 LÀ LIB, KHÔNG PHẢI SERVICE. Worker / proxy (relay) / dev-console đều import từ đây.
 **Không nơi nào khác trong repo được import `z-ai-web-dev-sdk` trực tiếp.**
 
-## Nguồn tham khảo đã có (prototype sandbox my-project)
-`src/app/api/chat/route.ts` (264 dòng) ĐÃ CHẠY ĐƯỢC: POST nhận messages → zsdk stream (glm-5.3, thinking enabled) → tách `reasoning_content`/`content` → SSE OpenAI-compatible + custom events + `[DONE]` + heartbeat 15s; lỗi truyền trong stream (`event: error`) thay vì đứt kết nối.
-→ T1-b là tái cấu trúc code đó thành lib, KHÔNG viết từ đầu. Đọc prototype trước khi làm.
+> **Căn cứ thực tế (G2 debug, Đợt 2):** zsdk 0.0.18 với `stream: true` đã trả thẳng `response.body` (ReadableStream<Uint8Array>) — SDK không parse, không default model, không fallback (G2-5). Adapter chỉ cần pass qua + xử lý abort + lỗi trước-stream.
 
-## API công khai (khóa sau khi T1-a xong)
+## Nguồn tham khảo đã có (prototype sandbox my-project)
+`src/app/api/chat/route.ts` (264 dòng) ĐÃ CHẠY ĐƯỢC: POST nhận messages → zsdk stream → SSE OpenAI-compatible + `[DONE]` + heartbeat 15s; lỗi truyền trong stream (`event: error`) thay vì đứt kết nối.
+> **Lưu ý Đợt 2:** prototype parse chunk → re-emit custom events (`thinking_start/...`) là CÁCH CŨ. Adapter mới chỉ giữ nguyên lý: SSE client/AbortSignal/heartbeat/xử lý lỗi trong stream; phần parse-re-emit KHÔNG tái sử dụng (thay bằng pass-through raw bytes). Phần parse client-side của prototype (`src/lib/sse-client.ts`) vẫn tham khảo được cho dev-console đọc `delta.reasoning_content`.
+
+## API công khai (ĐỔI theo lệnh chủ dự án Đợt 2 — thay thế bản AsyncGenerator/AdapterEvent cũ)
 
 ```ts
 import type { ChatMessage, ReasoningBlock } from '@zaiwebhub/protocol';
 
-export type AdapterEvent =
-  | { type: 'thinking_start' }
-  | { type: 'thinking_delta'; text: string }
-  | { type: 'answer_start' }
-  | { type: 'answer_delta'; text: string }
-  | { type: 'finish'; reason: string;
-      usage?: { prompt_tokens: number; completion_tokens: number } }
-  | { type: 'error'; error: { message: string; type: 'upstream_error' | 'cancelled' | 'unknown' } };
-
 export interface ChatRequest {
   messages: ChatMessage[];
-  model?: string;                                // mặc định 'glm-5.3'
+  model?: string;                                // pass-through tự do — KHÔNG enum (G2-3: proxy rewrite model)
   thinking?: { type: 'enabled' | 'disabled' };   // mặc định enabled
   clear_thinking?: boolean;                      // false = preserved thinking
   max_tokens?: number;
   temperature?: number;
 }
 
+// CHỐT ĐỢT 2: trả RAW SSE bytes nguyên xi từ upstream (Uint8Array) — KHÔNG parse-rồi-stringify.
+// Bytes đi qua worker → hub → user KHÔNG bị chạm vào ở bất kỳ hop nào (zero-parse end-to-end, F4).
 export function streamChat(req: ChatRequest, opts?: { signal?: AbortSignal }):
-  AsyncGenerator<AdapterEvent, void, undefined>;
+  ReadableStream<Uint8Array>;
 
-export function toSSE(e: AdapterEvent): string;   // đúng 100% bảng contract SSE
+// tiện ích preserved thinking (giữ nguyên — dành cho production sau MVP)
 export function serializeReasoningBlocks(blocks: ReasoningBlock[]): string;
 export function parseReasoningBlocks(raw: string): ReasoningBlock[];
-export const DEFAULT_MODEL = 'glm-5.3';
+export const DEFAULT_MODEL = 'glm-5.3';   // default REQUEST field; response.model có thể bị rewrite (G2-3) — không validate theo response.model
 ```
+
+> **Bỏ:** `AdapterEvent`, `AsyncGenerator<AdapterEvent>`, `toSSE()`. Wire SSE cho user giờ = upstream nguyên bản (OpenAI-compatible chunks + `[DONE]`) theo contract pass-through trong `packages/protocol/PLAN.md`. Client tự tách thinking qua `delta.reasoning_content`.
 
 ## File layout
 ```
 src/index.ts               re-export công khai
-src/stream.ts              streamChat() — vòng lặp for await trên zsdk stream
-src/sse.ts                 toSSE()
+src/stream.ts              streamChat() — pipe zsdk response.body ra ngoài, KHÔNG parse
 src/reasoning.ts           serialize/parse ReasoningBlock
-src/types.ts               AdapterEvent, ChatRequest (kế thừa @zaiwebhub/protocol)
+src/types.ts               ChatRequest (kế thừa @zaiwebhub/protocol)
 scripts/smoke-adapter.ts   smoke test chạy zsdk thật (tái dùng từ T0-c)
 ```
 
-## Quy tắc bắt buộc (kế thừa README gốc + PLANS.md)
-1. Mỗi delta của zsdk → 1 AdapterEvent NGAY LẬP TỨC. Không batch, không buffer, không parse-rồi-stringify lại phần reasoning.
-2. Lỗi giữa stream → yield `{ type: 'error' }` rồi kết thúc sạch. KHÔNG ném exception ra ngoài generator.
-3. `opts.signal` aborted → dừng đọc zsdk, dọn dẹp, KHÔNG emit thêm event nào.
-4. KHÔNG bao giờ sửa/xóa/reorder `reasoning_content`.
-5. `thinking.type = 'disabled'` → không emit event thinking nào, đi thẳng answer.
-6. Chunk lạ (không choices, rỗng) → bỏ qua an toàn (continue), không crash.
+## Quy tắc bắt buộc (Đợt 2 — thay bộ quy tắc AdapterEvent cũ)
+1. **Pass-through tuyệt đối**: `streamChat()` pipe bytes từ zsdk response.body ra ngoài NGUYÊN XI. Không đọc/chỉnh/re-encode nội dung bytes. Không batch, không buffer thêm.
+2. **Lỗi TRƯỚC stream** (HTTP != 200, zsdk throw, config thiếu): trả stream chứa đúng 1 frame lỗi `event: error\ndata: {"error":{"message":"...","type":"upstream_error"}}\n\n` rồi đóng sạch. KHÔNG throw exception ra ngoài caller.
+3. **Lỗi GIỮA stream** (connection đứt giữa chừng): chỉ `controller.close()`/`cancel()` — KHÔNG chèn thêm bytes giữa SSE frame dở dang (bytes đã đi là bytes đã đi — at-most-once).
+4. `opts.signal` aborted → `reader.cancel()` + dọn dẹp ngay, KHÔNG ghi thêm byte nào vào stream.
+5. KHÔNG bao giờ sửa/xóa/reorder `reasoning_content` — với pass-through thì tự động đúng (không chạm vào bytes).
+6. `thinking.type = 'disabled'` → chỉ gửi field đó cho upstream; mọi gì upstream trả đều pass nguyên xi.
+7. Backpressure: dùng pipethrough/queue tự nhiên của ReadableStream — KHÔNG đọc hết vào bộ nhớ.
 
 ## DoD T1-b
-- `scripts/smoke-adapter.ts`: 1 prompt ý tưởng dài (>= 200 từ), thinking enabled → in từng AdapterEvent kèm timestamp. Kết luận: stream liền mạch, đủ `thinking_delta → answer_delta → finish`; TTFB < 5s; tổng event > 50.
-- `toSSE()` khớp 100% bảng contract trong `packages/protocol/PLAN.md` (test so chuỗi mẫu).
-- AbortSignal hoạt động: abort giữa stream → không còn event nào, thoát sạch.
+- `scripts/smoke-adapter.ts`: 1 prompt ý tưởng dài (>= 200 từ), thinking enabled → đo trên RAW bytes: TTFB < 5s; đếm số frame `data:` > 50; có dòng `data: [DONE]`; có chunk cuối chứa `finish_reason` + `usage`; ghi nhận có/không `delta.reasoning_content` (sandbox: dự kiến 0 — G2-4; production: > 0).
+- Stream liền mạch không đứt: đo tổng thời gian, không có khoảng lặng bất thường (heartbeat/gap log).
+- AbortSignal hoạt động: abort giữa stream → stream đóng sạch, không thêm bytes.
+- Lỗi trước-stream: thử request model không tồn tại/key sai (biến env) → stream chứa đúng 1 `event: error` rồi đóng, KHÔNG throw.
 - Cập nhật trạng thái T1-b trong PLANS.md + ghi kết quả vào mục Nhật ký dưới đây.
 
 ## Nhật ký thực thi (agent ghi vào đây)
-- (chưa có)
+- Đợt 2 (2026-11-13): API đổi thành `streamChat() → ReadableStream<Uint8Array>` theo lệnh chủ dự án (song song freeze T1-a-1). Bỏ AdapterEvent/toSSE. Căn cứ G2: zsdk đã trả raw `response.body`, proxy rewrite model thành glm-4-plus, 0 reasoning chunk trong sandbox.

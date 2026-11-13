@@ -26,8 +26,8 @@ Dev chạy port 3003 trong sandbox; prod chạy trên VPS chính.
 - Auth (T3-e): header `Authorization: Bearer <key>` khớp env `TENANT_KEYS` → sai trả 401 JSON.
 - Body: `{ messages, model?, thinking?, clear_thinking?, conversation_id?, stream: true }`.
 - Header bắt buộc: `Content-Type: text/event-stream`, `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`, `Connection: keep-alive`.
-- Relay ZERO-BUFFER: nhận `job.chunk` từ WS → `controller.enqueue()` NGAY, giữ nguyên byte — KHÔNG parse-rồi-stringify lại reasoning.
-- Định dạng SSE đúng bảng contract trong `packages/protocol/PLAN.md` (thinking_* / answer_* / finish / error / `[DONE]`).
+- Relay ZERO-BUFFER (F4): nhận `job.chunk` (WS binary envelope `[16B job_id][4B seq][bytes]`) → decode header → `controller.enqueue()` NGAY payload bytes nguyên bản — KHÔNG parse, KHÔNG re-stringify.
+- Định dạng SSE cho user = **upstream nguyên bản** (OpenAI-compatible chunks + `[DONE]`) — theo contract pass-through trong `packages/protocol/PLAN.md` (bảng cũ thinking_*/answer_* đã DEPRECATED). Lỗi trước-stream → đúng 1 frame `event: error` (hằng `SSE_ERROR_EVENT`) rồi đóng sạch.
 - User disconnect (request signal aborted):
   - job CHƯA có chunk → thu hồi/hủy khỏi dispatch (cho phép re-dispatch).
   - ĐÃ stream → gửi `job.cancel` cho worker, vẫn flush `[DONE]` cho sạch.
