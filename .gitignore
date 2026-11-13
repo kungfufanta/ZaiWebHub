@@ -6,3 +6,6 @@ node_modules/
 *.log
 .DS_Store
 dist/
+apps/worker/.worker-config.json
+apps/worker/worker.log
+apps/worker/tsconfig.tsbuildinfo

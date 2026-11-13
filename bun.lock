@@ -102,10 +102,12 @@
         "z-ai-web-dev-sdk": "*",
       },
       "devDependencies": {
+        "@tailwindcss/postcss": "^4",
         "@types/node": "^22",
         "@types/react": "^19",
         "@types/react-dom": "^19",
         "@types/ws": "^8",
+        "tailwindcss": "^4",
         "typescript": "^5",
       },
     },

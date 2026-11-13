@@ -12,6 +12,20 @@ const nextConfig: NextConfig = {
       '.mjs': ['.mjs', '.mts'],
       '.cjs': ['.cjs', '.cts'],
     };
+    // Task 3.6-W: file-config.ts (fs/os) có thể lọt vào module graph edge của instrumentation qua
+    // dynamic import. Node branch của register() bị DefinePlugin fold bỏ nên edge KHÔNG chạy code này —
+    // fallback:false chỉ để webpack edge resolve được, KHÔNG ảnh hưởng build node (builtins external sẵn).
+    if (String(config.name ?? '').includes('edge')) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        'node:fs': false,
+        os: false,
+        'node:os': false,
+        path: false,
+        'node:path': false,
+      };
+    }
     return config;
   },
 };
