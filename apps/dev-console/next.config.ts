@@ -1,5 +1,14 @@
 import type { NextConfig } from "next";
 
+// Đợt 3.5: WEBHUB_ORIGIN (server-side) — khi console chạy sandbox KHÁC hub, rewrite
+// proxy server-side sang hub công cộng. Mặc định (khuyến nghị): hub chạy thẳng :3000 sandbox hub
+// → destination không cần query. Nếu hub sau gateway cần XTransformPort: set WEBHUB_QUERY.
+const WEBHUB_ORIGIN = (process.env.WEBHUB_ORIGIN ?? "").replace(/\/+$/, "");
+const WEBHUB_QUERY = process.env.WEBHUB_QUERY ?? "";
+const WEBHUB_REWRITE_DESTINATION = WEBHUB_ORIGIN
+  ? `${WEBHUB_ORIGIN}/v1/chat/completions${WEBHUB_QUERY}`
+  : "http://localhost:3003/v1/chat/completions";
+
 const nextConfig: NextConfig = {
   output: "standalone",
   /* config options here */
@@ -15,7 +24,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/v1/chat/completions",
-        destination: "http://localhost:3003/v1/chat/completions",
+        destination: WEBHUB_REWRITE_DESTINATION,
       },
     ];
   },

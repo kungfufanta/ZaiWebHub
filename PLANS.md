@@ -122,6 +122,11 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 | T4-b | ops | Failure drills: kill worker giữa stream; drop WS; restart hub → event:error + [DONE] sạch | T4-a | Mọi kịch bản kết thúc sạch | todo |
 | T4-c | ops | Load test N stream đồng thời (5→20): TTFB, RAM webhub, backpressure | T4-a | Không crash, RAM ổn định | todo |
 | T4-d | apps/worker | `MODE=relay`: relay frame, không gọi zsdk | T2-b | Worker→relay→hub stream thông suốt | todo |
+| T3.5-a | webhub+worker | Gate `/internal/worker-token` bằng `WORKER_SECRET` (hub, timing-safe) + worker gửi header `X-Worker-Secret` + `HUB_TOKEN_URL` env (đợt 3.5) | T3-e | 401 khi sai secret; register OK qua gateway | **done** |
+| T3.5-b | ops/docs | Runbooks multi-sandbox (docs/deploy/*) + chốt launch pattern sandbox (orphan `( nohup … & )`) + verify gateway `XTransformPort` (HTTP 200, kể cả WS) | — | Deployment LIVE trên hub sandbox; docs đầy đủ | **done** |
+| T3.5-c | ops | Multi-sandbox Loops 1–5 (reachability, register, E2E phân bổ W1/W2, failure drill, load) | T3.5-a, T3.5-b | Checklist COORDINATION.md đủ | in-progress |
+| T3.5-d | dev-console | Console cross-sandbox: `WEBHUB_ORIGIN`/`WEBHUB_QUERY` + `NEXT_PUBLIC_WEBHUB_URL`/`NEXT_PUBLIC_WEBHUB_QUERY` + CORS hub `/v1/*` | T3-c | Console sandbox khác chạy WebHub mode | **done** |
+| T3.5-e | ops | Owner switchover: dùng UI thật, scale worker, (tùy chốt) dọn đường VPS | T3.5-c | Owner xác nhận "hub dùng được" | todo |
 
 ### Decision gates
 - **G1 — transport**: **PASS (T0-b)** → WS confirmed.
@@ -263,3 +268,24 @@ Protocol package (T1-a-1) implement trực tiếp bởi agent phiên này TRƯ�
 - Rủi ro còn lại: PAT mới cũng đi qua kênh chat → owner nên revoke PAT cũ NGAY (nếu chưa) và rotate PAT mới khi phiên kết thúc.
 - Trạng thái kế hoạch: **Đợt 1–3 DONE + đã lên GitHub**. Còn mở: T3-f verify đầy đủ trên prod, T4-a…T4-d, và **Đợt 3.5 (remote worker onboarding: TLS wss://, worker auth, multi-worker registry)** chờ chủ dự án chốt 5 câu trong đề xuất chuyển hướng kiến trúc (cốt lõi: auth worker — shared secret hay per-worker token; số sandbox dự kiến).
 - Blocker production không đổi: E2E thinking thật chờ key Z.AI thật (`ZAI_API_KEY`) cho nơi chạy worker với `UPSTREAM=real` — nhãn `real-upstream-verified` chỉ gắn được sau khi test qua upstream thật (xem risk #6, #7).
+
+### [v7] Đợt 3.5 — Multi-sandbox deployment: hub dùng được (2026-11-13)
+
+**Bối cảnh:** owner chuyển hướng thực thi — chia 2–3 agent làm chung các sandbox (mỗi sandbox chạy được Next.js :3000 public), test với nhau liên tục, mục tiêu **hub dùng được**. Chốt 5 câu Đợt 3.5: auth worker = **shared secret** (`WORKER_SECRET`); số sandbox = hub + 2 worker; TLS = qua gateway sandbox (wss + XTransformPort); proxy = từng sandbox worker (`UPSTREAM=proxy` nội bộ); console = trên hub sandbox :3000.
+
+**Sự thật sandbox đã kiểm chứng (quan trọng — ghi vào docs/deploy/README.md):**
+1. **Launch pattern sống còn**: chỉ `( nohup CMD > log 2>&1 < /dev/null & )` (subshell-orphan, ppid=1, không phải session leader) sống qua ranh giới invocation. `setsid`/`& disown` trần bị harness reaper giết ngay.
+2. **Gateway công cộng forward `?XTransformPort=<port>`** tới `localhost:<port>` — verify HTTP 200 tới hub :3003; hỗ trợ cả WebSocket upgrade (demo socket.io chính thức của platform).
+3. Repo đã **public** trên GitHub — agent clone không cần PAT.
+4. `/etc/.z-ai-config` có sẵn mọi sandbox → worker remote chạy `UPSTREAM=proxy` ngay không cần key.
+
+**Code đã sửa (đợt này):** hub gate `/internal/worker-token` bằng `WORKER_SECRET` (timing-safe, 401 nếu sai) + CORS `/v1/*`; worker gửi `X-Worker-Secret` + env `HUB_TOKEN_URL` (URL đầy đủ cho gateway); console env `WEBHUB_ORIGIN`/`WEBHUB_QUERY`/`NEXT_PUBLIC_WEBHUB_URL`/`NEXT_PUBLIC_WEBHUB_QUERY`; `.env.example` × 3 app; spike `t35-gateway-ws.mjs`.
+
+**Deployment LIVE trên sandbox coordinator (đã verify đầy đủ trong session):**
+- hub :3003 (WORKER_SECRET gate ON) + worker nội bộ `local-w1` :3004 (register OK) + console :3000.
+- E2E SSE: 5 data / đúng 1 `[DONE]` / finish_reason stop / TTFB ~409ms / `upstream_done_relayed:true` — nhãn `no-reasoning (proxy)`, `mock-verified`.
+- Console → rewrite → hub → SSE raw upstream + usage PASS.
+
+**Chia việc Đợt 3.5 (docs/deploy/):** README (sự thật sandbox + topology + loops 1–5), 10-hub-sandbox.md (3.5-H), 20-worker-sandbox.md (3.5-W1/W2), 30-console-sandbox.md (3.5-C), COORDINATION.md (bảng status + nhật ký append-only qua git). Owner cần: (1) lấy public URL hub sandbox từ preview panel; (2) cấp `WORKER_SECRET` cho agent W qua chat; (3) paste bootstrap cho từng agent.
+
+**Còn mở:** Loop 1–5 với worker remote thật; T3.5-e switchover; blocker production không đổi (key Z.AI thật cho `UPSTREAM=real`).

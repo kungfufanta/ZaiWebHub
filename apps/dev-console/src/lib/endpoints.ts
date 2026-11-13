@@ -18,9 +18,22 @@ export const ADAPTER_PATH = '/api/adapter-chat';
  * WebHub thật (T4-a). Relative URL + XTransformPort=3003 — KHÔNG ghi port trực tiếp
  * vào URL tuyệt đối. Header auth dùng dev default key `zhb_dev_default_key` —
  * đây là key dev PUBLIC theo thiết kế sandbox (T3-e MVP single tenant), KHÔNG phải secret.
+ *
+ * Đợt 3.5 — console chạy sandbox KHÁC hub: set NEXT_PUBLIC_WEBHUB_URL = origin gateway của hub
+ * (vd `https://<hub-host>`) → WebHub mode fetch absolute URL qua gateway hub (CORS đã bật ở hub).
+ * Console restart sau khi set env (NEXT_PUBLIC_ inline lúc build/dev boot).
  */
 export const WEBHUB_PATH = '/v1/chat/completions?XTransformPort=3003';
 export const WEBHUB_DEV_KEY = 'zhb_dev_default_key';
+
+// Đợt 3.5 — hub remote (khuyến nghị: hub chạy thẳng :3000 của sandbox hub → URL sạch, không query).
+// Nếu hub nằm sau gateway cần XTransformPort, set NEXT_PUBLIC_WEBHUB_QUERY='?XTransformPort=3003'.
+const PUBLIC_WEBHUB_URL = (process.env.NEXT_PUBLIC_WEBHUB_URL ?? '').replace(/\/+$/, '');
+const PUBLIC_WEBHUB_QUERY = process.env.NEXT_PUBLIC_WEBHUB_QUERY ?? '';
+export const WEBHUB_REMOTE_PATH = PUBLIC_WEBHUB_URL
+  ? `${PUBLIC_WEBHUB_URL}/v1/chat/completions${PUBLIC_WEBHUB_QUERY}`
+  : '';
+export const IS_REMOTE_HUB = Boolean(PUBLIC_WEBHUB_URL);
 
 /** Model mặc định cho WebHub mode theo spec T4-a. */
 export const WEBHUB_DEFAULT_MODEL = 'glm-5.3';
@@ -52,7 +65,9 @@ export const ENDPOINT_MODES: EndpointModeMeta[] = [
     value: 'webhub',
     label: 'WebHub (E2E)',
     verifyLabel: 'no-reasoning (proxy)',
-    hint: '/v1/chat/completions?XTransformPort=3003 — SSE pass-through qua hub thật (T4-a)',
+    hint: IS_REMOTE_HUB
+      ? `${WEBHUB_REMOTE_PATH} — SSE pass-through qua hub REMOTE (đợt 3.5)`
+      : '/v1/chat/completions?XTransformPort=3003 — SSE pass-through qua hub thật (T4-a)',
   },
 ];
 
@@ -74,7 +89,7 @@ export function endpointUrlFor(mode: EndpointMode): string {
     case 'adapter':
       return ADAPTER_PATH;
     case 'webhub':
-      return WEBHUB_PATH;
+      return IS_REMOTE_HUB ? WEBHUB_REMOTE_PATH : WEBHUB_PATH;
     default:
       return process.env.NEXT_PUBLIC_CHAT_ENDPOINT || MOCK_PATH;
   }

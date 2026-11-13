@@ -118,6 +118,8 @@ export function startWorker(): void {
     worker_id: state.config.workerId,
     hub_url: state.config.hubUrl,
     hub_http_base: state.config.hubHttpBase,
+    hub_token_url: state.config.hubTokenUrl || '(derive từ hubHttpBase)',
+    worker_secret_set: state.config.workerSecret.length > 0,
     tenant_id: state.config.tenantId,
     mode: state.config.mode,
     upstream: state.config.upstream,
@@ -257,16 +259,22 @@ async function connectOnce(state: WorkerState): Promise<void> {
 }
 
 /**
- * Token: WORKER_TOKEN env nếu có; nếu không thì fetch `${HUB_HTTP_BASE}/internal/worker-token?tenant_id=...`.
+ * Token: WORKER_TOKEN env nếu có; nếu không thì fetch token endpoint.
+ * Đợt 3.5: HUB_TOKEN_URL (full URL, có thể kèm ?XTransformPort=...) ưu tiên hơn hubHttpBase;
+ * WORKER_SECRET (nếu set) gửi kèm header X-Worker-Secret — hub từ chối 401 nếu sai.
  * TTL ~60s → gọi LẠI ở mỗi lần open/reconnect (không cache).
- * 404 / connection-refused (hub do agent 3-b làm song song, có thể chưa lên) → throw → retry backoff.
- * KHÔNG log giá trị token.
+ * 401 / 404 / connection-refused → throw → retry backoff (log giữ nguyên trạng thái, KHÔNG log secret).
  */
 async function fetchToken(state: WorkerState): Promise<string> {
   const envToken = process.env.WORKER_TOKEN;
   if (envToken && envToken.length > 0) return envToken;
-  const url = `${state.config.hubHttpBase}/internal/worker-token?tenant_id=${encodeURIComponent(state.config.tenantId)}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(TOKEN_FETCH_TIMEOUT_MS) });
+  const { hubTokenUrl, hubHttpBase, tenantId, workerSecret } = state.config;
+  const base = hubTokenUrl || `${hubHttpBase}/internal/worker-token`;
+  const joiner = base.includes('?') ? '&' : '?';
+  const url = `${base}${joiner}tenant_id=${encodeURIComponent(tenantId)}`;
+  const headers: Record<string, string> = {};
+  if (workerSecret) headers['X-Worker-Secret'] = workerSecret;
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(TOKEN_FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`worker-token endpoint HTTP ${res.status}`);
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
   const candidate: unknown =

@@ -2,9 +2,9 @@
 // User auth: Bearer key khớp env TENANT_KEYS cho /v1/* (dev: mọi key map về tenant 'default').
 // Worker auth: hub mint HMAC short-lived token (~60s TTL) cho /internal/worker-token;
 // worker đưa token vào worker.register, hub verify (signature + exp + tenant).
-// LƯU Ý BẢO MẬT (dev-only): /internal hiện KHÔNG xác thực — production hardening TODO
-// (phải gate route này bằng network policy / admin auth trước khi lên VPS).
-import { createHmac, timingSafeEqual } from 'node:crypto';
+// Đợt 3.5: /internal/worker-token gate bằng WORKER_SECRET (header X-Worker-Secret) khi hub
+// expose công khai. KHÔNG set env → chỉ chấp nhận cho dev loopback.
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { log } from './logger.js';
 
 const DEFAULT_TENANT_KEY = 'zhb_dev_default_key';
@@ -96,10 +96,32 @@ export function verifyWorkerToken(
   return { ok: true, payload: { tenant_id: p.tenant_id, iat: p.iat, exp: p.exp } };
 }
 
+// ---------- Đợt 3.5: worker secret (public internet) ----------
+// Worker connect từ sandbox KHÁC qua internet công cộng → /internal/worker-token phải gate bằng
+// shared secret, nếu không ai cắm worker lạ vào hub cũng được (chiếm job). Hub set env WORKER_SECRET;
+// worker gửi cùng giá trị qua header X-Worker-Secret khi fetch token. KHÔNG set env → dev mode
+// (không gate — hành vi cũ, chỉ dùng loopback). Giá trị secret KHÔNG BAO GIỜ log.
+export function isWorkerSecretRequired(): boolean {
+  return Boolean(process.env.WORKER_SECRET);
+}
+
+export function matchesWorkerSecret(input: string | null | undefined): boolean {
+  const expected = process.env.WORKER_SECRET ?? '';
+  if (!expected) return true; // dev mode — gate không bật
+  // hash 2 bên về 32 byte để timing-safe không lộ chiều dài secret
+  const a = createHash('sha256').update(input ?? '').digest();
+  const b = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(a, b);
+}
+
 // Ghi log cảnh báo một lần lúc boot (T3-f) — không in secret ra log.
 export function logSecurityBaselineWarnings(): void {
   if (!process.env.WEBHUB_SECRET) {
     log('warn', 'WEBHUB_SECRET not set — using default dev secret; rotate before any real deployment');
   }
-  log('warn', '/internal/worker-token is UNAUTHENTICATED in dev — production hardening TODO (T3-f)');
+  if (isWorkerSecretRequired()) {
+    log('info', '/internal/worker-token gated by WORKER_SECRET (header X-Worker-Secret) — Đợt 3.5');
+  } else {
+    log('warn', '/internal/worker-token is UNAUTHENTICATED (WORKER_SECRET not set) — CHỈ dùng loopback, KHÔNG expose công khai');
+  }
 }

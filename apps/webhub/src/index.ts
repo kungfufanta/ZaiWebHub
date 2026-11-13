@@ -5,14 +5,17 @@
 import { serve, type ServerType } from '@hono/node-server';
 import type { Server as HttpServer } from 'node:http';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { WorkerHub, type WorkerEntry } from './hub/ws.js';
 import { Dispatcher } from './dispatch.js';
 import { MemoryStateStore } from './state.js';
 import {
   bearerFromHeader,
   getTenantKeys,
+  isWorkerSecretRequired,
   isValidApiKey,
   logSecurityBaselineWarnings,
+  matchesWorkerSecret,
   mintWorkerToken,
   DEFAULT_WORKER_TOKEN_TTL_SECONDS,
 } from './auth.js';
@@ -43,8 +46,28 @@ dispatcher = new Dispatcher({ hub, store });
 
 app.get('/healthz', (c) => c.json({ ok: true, service: 'webhub', ts: Date.now() }));
 
-// T3-f: mint worker token (dev-only route, UNAUTHENTICATED — production hardening TODO)
+// Đợt 3.5: CORS cho console/browser ở sandbox khác (auth vẫn là Bearer key — CORS chỉ là
+// điều kiện cần để browser gọi chéo origin, KHÔNG phải cơ chế auth).
+app.use(
+  '/v1/*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Worker-Secret'],
+  }),
+);
+
+// T3-f + Đợt 3.5: mint worker token. WORKER_SECRET set → bắt buộc header X-Worker-Secret khớp
+// (timing-safe compare); sai → 401. KHÔNG set → dev loopback-only, KHÔNG expose công khai.
 app.get('/internal/worker-token', (c) => {
+  const provided = c.req.header('X-Worker-Secret');
+  if (isWorkerSecretRequired() && !matchesWorkerSecret(provided)) {
+    log('warn', 'worker-token refused: missing/wrong X-Worker-Secret', {
+      forwarded_for: c.req.header('X-Forwarded-For') ?? 'unknown',
+      path: c.req.path,
+    });
+    return c.json({ error: { message: 'worker secret required (header X-Worker-Secret)' } }, 401);
+  }
   const tenantId = c.req.query('tenant_id') ?? 'default';
   const ttlRaw = Number(c.req.query('ttl') ?? DEFAULT_WORKER_TOKEN_TTL_SECONDS);
   const ttl = Math.min(Math.max(Number.isFinite(ttlRaw) ? ttlRaw : DEFAULT_WORKER_TOKEN_TTL_SECONDS, 5), MAX_TOKEN_TTL_SECONDS);
@@ -79,6 +102,7 @@ log('info', 'webhub booting', {
   port: PORT,
   tenant_key_count: getTenantKeys().length,
   webhub_secret_set: Boolean(process.env.WEBHUB_SECRET),
+  worker_secret_required: isWorkerSecretRequired(),
 });
 
 const server = serve({ fetch: app.fetch, port: PORT }, (info) => {

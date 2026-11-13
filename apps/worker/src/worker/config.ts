@@ -6,6 +6,11 @@
 export interface WorkerConfig {
   hubUrl: string;
   hubHttpBase: string;
+  /** Đầy đủ URL token endpoint (đợt 3.5). '' → derive từ hubHttpBase. Dùng khi qua gateway
+   *  công cộng: HUB_TOKEN_URL=https://<hub-host>/internal/worker-token?XTransformPort=3003 */
+  hubTokenUrl: string;
+  /** Shared secret gate /internal/worker-token (đợt 3.5). '' → không gửi header (dev loopback). */
+  workerSecret: string;
   tenantId: string;
   mode: 'worker' | 'relay';
   upstream: 'proxy' | 'real';
@@ -38,6 +43,8 @@ export function loadConfig(): WorkerConfig {
   return {
     hubUrl: process.env.HUB_URL ?? 'ws://localhost:3003/worker',
     hubHttpBase: process.env.HUB_HTTP_BASE ?? 'http://localhost:3003',
+    hubTokenUrl: process.env.HUB_TOKEN_URL ?? '',
+    workerSecret: process.env.WORKER_SECRET ?? '',
     tenantId: process.env.TENANT_ID ?? 'default',
     mode: parseMode(process.env.MODE),
     upstream: parseUpstream(process.env.UPSTREAM),
