@@ -5,6 +5,11 @@
 > Worker KHÔNG cần inbound — :3000 của sandbox bạn serve UI setup/status; kết nối tới hub là WS outbound.
 > Đọc `docs/deploy/README.md` mục 0 TRƯỚC khi làm (launch pattern + gateway + repo public).
 
+> ⚡ **Cách KHÔNG cần clone (3.8-P):** tải bundle ZIP từ GitHub Release rolling —
+> `https://github.com/kungfufanta/ZaiWebHub/releases/download/worker-bundle/worker-bundle.zip`
+> → unzip → `bun install` → boot (tóm tắt ở `50-worker-bundle.md` mục 3; chi tiết trong
+> `START-HERE.md` kèm trong zip). Các bước bên dưới giữ nguyên cho người clone repo.
+
 ## Input cần có (owner cấp qua chat)
 
 - `<hub-host>` — public URL của sandbox hub (LẤY TỪ TAB WORKERS CỦA HUB DASHBOARD nếu đã có tab đó; hoặc owner cung cấp).

@@ -46,6 +46,8 @@ Owner browser ──▶ https://<hub-host>/                    dev-console :3000
 | HUB agent | [10-hub-sandbox.md](./10-hub-sandbox.md) | 3.5-H |
 | WORKER agent | [20-worker-sandbox.md](./20-worker-sandbox.md) | 3.5-W1 / 3.5-W2 |
 | CONSOLE agent | [30-console-sandbox.md](./30-console-sandbox.md) | 3.5-C |
+| DOCS/GitHub Pages | [40-github-pages.md](./40-github-pages.md) | 3.7-D |
+| WORKER BUNDLE (CI/CD zip) | [50-worker-bundle.md](./50-worker-bundle.md) | 3.8-P |
 
 ## 4. Vòng test liên tục (test với nhau qua repo)
 

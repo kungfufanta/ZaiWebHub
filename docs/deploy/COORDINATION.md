@@ -44,3 +44,4 @@
 - [ ] Owner dùng UI thành công (bằng chứng screenshot/mô tả)
 - [x] T3.7-D (hub sandbox) — tab Docs (API kiểu OpenAI) + site static GitHub Pages: /docs render+copy+scroll-spy PASS; export `docs-site/index.html` fill {HUB}+copy PASS; API test đúng docs (healthz 200, SSE 1 [DONE], 401 sạch) (2026-11-13T09:40Z)
 - [x] T3.7-D push (hub sandbox) — PAT mới push OK phần không-workflow; workflow deploy-docs.yml đặt bản REFERENCE COPY tại docs/deploy/github-pages-workflow.yml (owner tạo file .github/workflows/ qua web UI — PAT thiếu scope workflow) (2026-11-13T09:55Z)
+- [x] T3.8-P (hub sandbox) — worker bundle CI/CD: pack-worker-bundle.ts → zip 152KB/70 files (loại trừ sạch + scan secret); extract→bun install→boot :3100 env → hub /internal/workers thấy w-bundle-t1 ONLINE → kill sạch; workflow REFERENCE COPY pack-worker-workflow.yml chờ owner tạo qua web UI (PAT thiếu scope workflow) (2026-11-13T09:50Z)

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node scripts/dev-strict.mjs",
     "dev:direct": "next dev -p 3000",
+    "pack:bundle": "bun run scripts/pack-worker-bundle.ts",
     "build": "next build",
     "start": "next start"
   },
