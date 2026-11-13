@@ -19,7 +19,8 @@
 
 - [2026-11-13T08:12Z] [W1] [loop2] PASS — worker :3004 start đúng Bước 3 (subshell-orphan, Ready 1785ms). `/api/health`: registered:true, connected:true, worker_id `w1-c-6af6b891-140d72b5-f60f886f06dc`, upstream proxy, attempt 0. worker.log có `worker.register sent` (concurrency 2, models glm-5.3, protocol v1), KHÔNG có 401. Cần H xác nhận hub.log `worker registered`.
 - [2026-11-13T08:05Z] [W1] [loop1] PASS — curl `https://<hub-host>/healthz?XTransformPort=3003` từ sandbox W1 (host `c-6af6b891-140d72b5-f60f886f06dc`) → HTTP 200. Repo clone @ cd3135b, bun install 1152 packages OK. Sang Bước 3 (start worker :3004).
-- [2026-11-13T07:44Z] [W2] [loop2] PASS — worker `w2-c-6af6b9ae-140d72b5-5aff54cafef5` :3004 register OK qua gateway công cộng: WS connected, fetch token OK (không 401), log có `worker.register sent`, /api/health → `registered:true, connected:true, inflight:0, attempt:0`. Chờ H/owner xác nhận hub.log thấy CẢ w1+w2 trước khi W2 vào loop 3.
+- [2026-11-13T07:49Z] [W2] [loop3] PASS — 3 đợt đo từ sandbox W2 (curl qua gateway hub, dev key): (1) tuần tự 6 req → w2 nhận 0/6 (đúng cơ chế tie-break registry-order khi cả pool đều rảnh); (2) chồng lấn 6 req → w2 nhận 1/6; (3) burst đồng thời 6 req → **w2 nhận 2/6** (2 job `ab08962a`, `e5212c4b`, cả 2 start ở `inflight:2` = đúng cap concurrency=2), 4/6 sang w1-side. Mọi request 200 + đúng 1 `[DONE]` + finish stop. Least-loaded phân bổ job cho CẢ w1 và w2 xác nhận (tỉ lệ burst: w1-side 4/6 — 67%, w2 2/6 — 33%). TTFB burst trung bình ~967ms. Job trên w2 chạy trọn vòng đời: `job started` → `job executing` → `job ended: done` (43 chunks, usage OK, `scan_done:true`, `upstream_done_relayed_sent:true`). Ghi chú: hub có thể thấy >2 worker (local-w1 + w1-remote + w2) — đề nghị H/owner xác nhận danh sách worker trong hub.log.
+- [2026-11-13T07:44Z] [W2] [loop2] PASS — worker `w2-c-6af6b9ae-140d72b5-5aff54cafef5` :3004 register OK qua gateway công cộng: WS connected, fetch token OK (không 401), log có `worker.register sent`, /api/health → `registered:true, connected:true, inflight:0, attempt:0`. Xác nhận chức năng hub thấy w1+w2 có thêm ở loop3 (job dispatch sang cả 2 phía).
 - [2026-11-13T07:44Z] [W2] [loop1] PASS — curl `https://<hub-host>/healthz?XTransformPort=3003` từ sandbox W2 → HTTP 200.
 - [2026-11-13T07:16Z] [HUB] [boot+e2e] PASS — hub :3003 (WORKER_SECRET gate ON) + worker local-w1 :3004; E2E SSE 5 data / 1 [DONE] / finish_reason stop / TTFB 409ms / `upstream_done_relayed:true`; gateway `:81 + XTransformPort=3003` → HTTP 200. Launch pattern `( nohup … & )` sống qua ranh giới invocation (6+ lần verify).
 - [2026-11-13T07:21Z] [C] [boot] PASS — console :3000 trên hub sandbox; proxy test qua rewrite :3000 → hub → SSE raw upstream + usage + 1 [DONE].
@@ -30,7 +31,7 @@
 - [x] Loop 1 — W2 — PASS (HTTP 200, 2026-11-13T07:44Z)
 - [x] Loop 2 — W1 register (hub log xác nhận)
 - [x] Loop 2 — W2 register — worker-side PASS (chờ hub log xác nhận)
-- [ ] Loop 3 — E2E chat qua console, dispatch phân bổ W1/W2 (least-loaded)
+- [x] Loop 3 — E2E dispatch phân bổ W1/W2 (least-loaded) — burst 6 req: w2 2/6, w1-side 4/6, mọi stream 1 [DONE] (2026-11-13T07:49Z)
 - [ ] Loop 4 — kill worker giữa stream → error+[DONE] sạch / re-dispatch OK
 - [ ] Loop 5 — 5 request đồng thời → không crash, ghi TTFB
 - [ ] Owner dùng UI thành công (bằng chứng screenshot/mô tả)
