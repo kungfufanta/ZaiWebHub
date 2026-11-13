@@ -1,0 +1,16 @@
+{
+  "name": "zaiwebhub",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "packageManager": "bun@1.2.0",
+  "devDependencies": {
+    "typescript": "^5"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p packages/protocol && tsc --noEmit -p packages/zai-adapter && tsc --noEmit -p apps/webhub",
+    "lint": "echo '(placeholder) lint wired later'"
+  }
+}
