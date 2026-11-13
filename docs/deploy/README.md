@@ -27,17 +27,17 @@ Owner browser ──▶ https://<hub-host>/                    dev-console :3000
   worker sandbox W1   worker sandbox W2   (mỗi sandbox 1 worker, ID riêng, secret chung)
 ```
 
-- **HUB sandbox** (hiện tại: sandbox của coordinator — đang LIVE): hub `:3003` + console `:3000` + 1 worker nội bộ `:3004`.
-- **WORKER sandboxes** (W1, W2): chỉ chạy `apps/worker` `:3004`, outbound tới hub, KHÔNG cần inbound.
+- **HUB sandbox** (hiện tại: sandbox của coordinator — đang LIVE): hub `:3003` + console `:3000` + (tùy chọn) 1 worker nội bộ headless `:3004` qua env.
+- **WORKER sandboxes** (W1, W2): chạy `apps/worker` **:3000** (UI setup/status — 3.6-W), outbound tới hub, KHÔNG cần inbound.
 - Auth: worker fetch token từ hub kèm header `X-Worker-Secret` = `WORKER_SECRET` (owner cấp qua chat, KHÔNG commit).
 
 ## 2. Ports
 
 | Port | Service | Ghi chú |
 |---|---|---|
-| 3000 | dev-console (Next.js) | UI public — mở root public URL là thấy |
+| 3000 | worker UI (Next.js) TRÊN WORKER SANDBOX | setup/status qua public URL — Task 3.6-W; console hub vẫn dùng :3000 trên HUB sandbox |
 | 3003 | webhub hub (Hono) | public qua `?XTransformPort=3003` |
-| 3004 | worker (Next.js dev) | KHÔNG cần public; `/api/health` xem nội bộ |
+| 3004 | (hub sandbox) worker nội bộ headless, tùy chọn | env mode — xem 20-worker-sandbox.md mục ADVANCED |
 
 ## 3. Vai trò & runbooks
 

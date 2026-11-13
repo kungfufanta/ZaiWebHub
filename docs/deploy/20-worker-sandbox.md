@@ -1,73 +1,141 @@
-# Runbook WORKER agent (Task ID: 3.5-W1 / 3.5-W2)
+# Runbook WORKER agent (Task ID: 3.5-W1 / 3.5-W2 / 3.6-W)
 
-> Mục tiêu: sandbox của bạn chạy 1 worker (apps/worker :3004) kết nối OUTBOUND tới hub công khai.
-> Worker KHÔNG cần inbound — public :3000 của sandbox bạn KHÔNG dùng cho worker.
-> Đọc `docs/deploy/README.md` mục 0 TRƯỚC khi làm.
+> Mục tiêu: sandbox của bạn chạy 1 worker (apps/worker :3000) kết nối OUTBOUND tới hub công khai.
+> **Workflow mới (3.6-W): deploy sandbox → clone → mở public URL :3000 → paste hub URL + secret → DONE.**
+> Worker KHÔNG cần inbound — :3000 của sandbox bạn serve UI setup/status; kết nối tới hub là WS outbound.
+> Đọc `docs/deploy/README.md` mục 0 TRƯỚC khi làm (launch pattern + gateway + repo public).
 
 ## Input cần có (owner cấp qua chat)
 
-- `<hub-host>` — public URL của sandbox hub.
-- `<WORKER_SECRET>` — shared secret (KHÔNG commit vào repo).
-- Worker ID của bạn: `w1-<tên-sandbox>` hoặc `w2-<tên-sandbox>`.
+- `<hub-host>` — public URL của sandbox hub (LẤY TỪ TAB WORKERS CỦA HUB DASHBOARD nếu đã có tab đó; hoặc owner cung cấp).
+- `<WORKER_SECRET>` — shared secret (KHÔNG commit vào repo, KHÔNG ghi vào file nào ngoài `.worker-config.json` gitignored).
+- Worker ID gợi ý: `w1-<tên-sandbox>` / `w2-<tên-sandbox>` (UI pre-fill sẵn `w1-<hostname>` — có thể sửa).
 
-## Bước 1 — Clone + install
+## Bước 1 — Clone + install + launch
 
 ```bash
 git clone https://github.com/kungfufanta/ZaiWebHub.git && cd ZaiWebHub
 bun install
+cd apps/worker
+( nohup node scripts/dev-strict.mjs > worker.log 2>&1 < /dev/null & )
 ```
 
-## Bước 2 — Loop 1: kiểm tra thấy được hub TỪ sandbox của bạn (TRƯỚC khi start worker)
+- Worker chạy **:3000** (STRICT PORT — nếu :3000 đã bận, log lỗi rõ ràng rồi thoát; KHÔNG tự đổi port).
+- Pattern launch bắt buộc: subshell-orphan `( nohup … & )` — CẤM `setsid` / `& disown` trần.
+- Verify sống: `ps -o pid,ppid -p <pid>` → ppid=1; `curl http://127.0.0.1:3000/` → 200.
+
+## Bước 2 — Mở public URL :3000 → Setup form
+
+Không có config → worker serve **SETUP FORM**:
+
+```
+┌──────────────────────────────────────────────┐
+│                  [Z]                         │
+│             ZaiWebHub Worker                 │
+│  Kết nối sandbox này vào worker-pool hub     │
+│ ┌──────────────────────────────────────────┐ │
+│ │ Hub URL                                  │ │
+│ │ [https://preview-xxx.space-z.ai        ] │ │
+│ │ Lấy URL từ tab Workers của hub dashboard.│ │
+│ │ Nếu hub sau gateway sandbox, giữ nguyên  │ │
+│ │ query (vd ?XTransformPort=3003).         │ │
+│ │                                          │ │
+│ │ Worker ID                                │ │
+│ │ [w1-<hostname-sandbox>  (pre-fill)]      │ │
+│ │                                          │ │
+│ │ Worker Secret                            │ │
+│ │ [••••••••••••  (password, masked)]       │ │
+│ │                                          │ │
+│ │            [   Connect   ]               │ │
+│ │   ⟳ Registering with hub...              │ │
+│ └──────────────────────────────────────────┘ │
+└──────────────────────────────────────────────┘
+```
+
+Điền:
+1. **Hub URL** — URL công cộng của hub. Nếu hub chạy sau gateway sandbox (port ≠ mặc định),
+   PHẢI kèm query gateway, ví dụ: `https://<hub-host>/?XTransformPort=3003`.
+2. **Worker ID** — đã pre-fill `w1-<hostname>`; sửa prefix `w1-`/`w2-` theo vai trò được giao.
+3. **Worker Secret** — paste secret owner cấp (masked, không bao giờ hiển thị lại).
+
+Bấm **Connect** → form ghi `.worker-config.json` (gitignored, mode 0600) → runtime WS start →
+poll đăng ký → **tự chuyển sang Status dashboard**.
+
+## Bước 3 — Status dashboard (auto-refresh 3s)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ [Z] ZaiWebHub Worker              [Disconnect / Re-configure]      │
+│ Status dashboard — cập nhật tự động mỗi 3 giây                     │
+│                                                                    │
+│ ┌──────────┐ ┌────────────┐ ┌───────────┐ ┌─────────┐              │
+│ │ STATUS   │ │ WORKER ID  │ │ HUB URL   │ │ INFLIGHT│              │
+│ │ ● Online │ │ w1-c-…-f06 │ │ https://… │ │ 0 job   │              │
+│ └──────────┘ └────────────┘ └───────────┘ └─────────┘              │
+│ ┌──────────┐ ┌────────────┐ ┌───────────┐ ┌─────────┐              │
+│ │ TOTAL    │ │ UPTIME     │ │ LAST      │ │ UPSTREAM│              │
+│ │ JOBS: 1  │ │ 2m 15s     │ │ HEARTBEAT │ │ / MODE  │              │
+│ │          │ │ (file)     │ │ 5s trước  │ │ proxy/… │              │
+│ └──────────┘ └────────────┘ └───────────┘ └─────────┘              │
+│ ┌─ Log tail (100 dòng cuối) ── worker.log ────────────────────────┐ │
+│ │ [worker] [info] worker.register sent {…}                        │ │
+│ │ [worker] [info] job started {job_id…}                           │ │
+│ └─────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- **Status**: Online / Registering / Connecting / Reconnecting / Stopped.
+- **Disconnect / Re-configure**: stop WS runtime (KHÔNG kill process) + xoá config → về setup form.
+- Restart process (kill + launch lại Bước 1) → config file còn → **tự reconnect**, UI khôi phục.
+
+## Bước 4 — Verify nhanh sau khi connect
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' 'https://<hub-host>/healthz?XTransformPort=3003'   # mong 200
+curl -s http://127.0.0.1:3000/api/health   # registered:true, connected:true, worker_id đúng
+tail -6 worker.log                          # phải có "worker.register sent"
 ```
 
-Nếu không phải 200 → báo owner NGAY (ghi COORDINATION.md, commit `docs(coord): W1 loop1 FAIL`), không đi tiếp.
+Sau đó nhờ owner/H xác nhận hub.log có `worker registered worker_id=<của bạn>`,
+và ghi COORDINATION.md theo loop (xem README mục 4).
 
-## Bước 3 — Khởi động worker (port 3004)
+## ADVANCED — Headless mode qua env (không UI)
+
+Nếu 3 biến env đủ cả 3 (env **ưu tiên hơn** config file khi boot):
 
 ```bash
 cd apps/worker
 export WORKER_SECRET='<WORKER_SECRET>'
 export WORKER_ID='w1-<tên-sandbox>'
-export HUB_URL='wss://<hub-host>/worker?XTransformPort=3003'
-export HUB_TOKEN_URL='https://<hub-host>/internal/worker-token?XTransformPort=3003'
-# UPSTREAM mặc định = proxy (zsdk đọc /etc/.z-ai-config có sẵn trong sandbox) — không cần set.
-( nohup node node_modules/.bin/next dev -p 3004 > worker.log 2>&1 < /dev/null & )
+export HUB_URL='https://<hub-host>/?XTransformPort=3003'   # base hub; wss://…/worker?… cũ vẫn chấp nhận
+# (tuỳ chọn) HUB_TOKEN_URL — thiếu sẽ tự derive từ HUB_URL (giữ nguyên query gateway)
+( nohup node scripts/dev-strict.mjs > worker.log 2>&1 < /dev/null & )
 ```
 
-CẤM `setsid` / `& disown` trần — dùng đúng `( nohup … & )`.
+`POST /api/setup` khi có env: env vẫn thắng lúc reboot; setup qua UI ghi đè config file như thường.
 
-## Bước 4 — Verify (mỗi câu 1 invocation riêng)
+## API routes
 
-```bash
-curl -s http://127.0.0.1:3004/api/health     # "registered":true, "connected":true, worker_id đúng
-tail -6 worker.log                            # phải có "worker.register sent"
-```
+| Route | Method | Ý nghĩa |
+|---|---|---|
+| `/` | GET | Setup form (chưa config) / Status dashboard (đã config) |
+| `/api/setup` | POST | `{hub_url, worker_id, worker_secret}` → ghi config + start runtime (singleton) |
+| `/api/status` | GET | configured, phase, registered, connected, inflight, total_jobs, uptime, heartbeat, logs |
+| `/api/disconnect` | POST | Stop WS runtime + xoá config file |
+| `/api/health` | GET | Giữ nguyên shape cũ (W2/ops script đang dựa vào nó) |
 
-Log worker có `worker-token endpoint HTTP 401` lặp → sai/thiếu secret → đối chiếu lại env với owner.
+## Troubleshooting
 
-## Bước 5 — Báo cáo (Loop 2)
-
-- Ghi `docs/deploy/COORDINATION.md` dòng W1/W2 (worker_id, sandbox, trạng thái), commit
-  `docs(coord): W1 loop2 registered`, `git pull --rebase && git push`.
-- Nhờ H xác nhận hub.log thấy `worker registered worker_id=<của bạn>`.
-
-## Bước 6 — Nhận job thật (Loop 3)
-
-Nhờ C/owner bắn 1 chat qua console (WebHub mode). Nếu job dispatch tới worker bạn:
-log có `job started` → `job done`. Đóng góp số liệu: TTFB, số chunk, finish_reason.
-
-## Bước 7 — Phục vụ Loop 4 (failure drill)
-
-Khi H yêu cầu: `pkill -f 'next dev -p 3004'` (giả chết giữa stream), rồi start lại đúng Bước 3.
-
-## Lỗi thường gặp
-
-| Hiện tượng | Xử lý |
+| Hiện tượng | Nguyên nhân / Xử lý |
 |---|---|
-| `WS error: connect ECONNREFUSED/timeout` tới hub | Loop 1 chưa PASS — báo owner, kiểm tra URL `wss://` + query `?XTransformPort=3003` |
-| `worker-token endpoint HTTP 401` | Sai `WORKER_SECRET` hoặc thiếu header (worker cũ < Đợt 3.5) — pull repo mới nhất |
-| Worker chết sau vài phút | Sai launch pattern — dùng `( nohup … & )` |
-| `duplicate worker_id` trên hub | 2 process worker cùng ID — `pkill -f 'next dev -p 3004'` rồi start lại 1 instance |
+| `worker-token endpoint HTTP 401` lặp trong log | Sai `WORKER_SECRET` → Disconnect/Re-configure, paste lại secret |
+| UI không thấy worker mới ở hub / không nhận job | Sai hub URL (thiếu `?XTransformPort=3003` nếu hub sau gateway) → paste lại đúng URL từ hub dashboard |
+| `FATAL: port 3000 ĐÃ BẬN` khi launch | Port bận (dev-console/next cũ chiếm) → `pkill -f 'next dev -p 3000'` rồi launch lại — strict port KHÔNG tự đổi port |
+| `WS error: connect ECONNREFUSED/timeout` | Hub chưa lên hoặc sai URL → chạy `curl '<hub>/healthz?XTransformPort=3003'` mong 200 trước |
+| `duplicate worker_id` trên hub | 2 process worker cùng ID → `pkill -f 'next dev -p 3000'` rồi start lại 1 instance |
+| Worker chết sau vài phút | Sai launch pattern → dùng đúng `( nohup … & )` |
+
+## Lịch sử port (đổi tại 3.6-W)
+
+- **Trước 3.6**: worker `:3004`, cấu hình 100% env, không UI.
+- **Từ 3.6**: worker `:3000` (UI setup/status); env headless vẫn được hỗ trợ cho hub sandbox chạy worker nội bộ
+  ở port khác (vd `WORKER_PORT=3004 node scripts/dev-strict.mjs` hoặc `dev:direct` + env).

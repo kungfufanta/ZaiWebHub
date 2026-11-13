@@ -3,7 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3004",
+    "dev": "node scripts/dev-strict.mjs",
+    "dev:direct": "next dev -p 3000",
     "build": "next build",
     "start": "next start"
   },
@@ -21,6 +22,8 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/ws": "^8"
+    "@types/ws": "^8",
+    "tailwindcss": "^4",
+    "@tailwindcss/postcss": "^4"
   }
 }
