@@ -40,6 +40,9 @@ export default function StatusDashboard({ initial }: { initial: StatusPayload })
   const router = useRouter();
   const [status, setStatus] = useState<StatusPayload>(initial);
   const [disconnecting, setDisconnecting] = useState(false);
+  // Hydration-safe: thời gian tương đối ("Xs trước") phụ thuộc Date.now() — chỉ tính SAU khi mount,
+  // SSR + lần render đầu của client cùng trả giá trị tĩnh '—' (tránh mismatch "5s" vs "6s trước").
+  const [mounted, setMounted] = useState(false);
 
   const poll = useCallback(async () => {
     try {
@@ -51,6 +54,7 @@ export default function StatusDashboard({ initial }: { initial: StatusPayload })
   }, []);
 
   useEffect(() => {
+    setMounted(true);
     const t = setInterval(() => {
       void poll();
     }, 3000);
@@ -126,7 +130,9 @@ export default function StatusDashboard({ initial }: { initial: StatusPayload })
           {fmtUptime(status.uptime_sec)}
           <span className="ml-2 text-xs font-normal text-zinc-400">(runtime {status.config_source ?? '—'})</span>
         </Card>
-        <Card title="Last heartbeat">{fmtHeartbeat(status.last_heartbeat)}</Card>
+        <Card title="Last heartbeat">
+          <span suppressHydrationWarning>{mounted ? fmtHeartbeat(status.last_heartbeat) : '—'}</span>
+        </Card>
         <Card title="Upstream / Mode">
           {status.upstream} / {status.mode}
         </Card>
