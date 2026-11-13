@@ -42,3 +42,5 @@
 - [x] Loop 4 — kill worker giữa stream: W2 drill PARTIAL — re-dispatch trước-chunk PASS, route-new-job PASS, kill-giữa-stream remote FAIL client-side (không nhận event:error/[DONE], cần H soi hub.log) (2026-11-13T08:04Z)
 - [x] Loop 5 — 5 request đồng thời: 5/5 sạch 1 [DONE], không crash, TTFB trung bình ~1005ms (2026-11-13T08:06Z)
 - [ ] Owner dùng UI thành công (bằng chứng screenshot/mô tả)
+- [x] T3.7-D (hub sandbox) — tab Docs (API kiểu OpenAI) + site static GitHub Pages: /docs render+copy+scroll-spy PASS; export `docs-site/index.html` fill {HUB}+copy PASS; API test đúng docs (healthz 200, SSE 1 [DONE], 401 sạch) (2026-11-13T09:40Z)
+- [x] T3.7-D push (hub sandbox) — PAT mới push OK phần không-workflow; workflow deploy-docs.yml đặt bản REFERENCE COPY tại docs/deploy/github-pages-workflow.yml (owner tạo file .github/workflows/ qua web UI — PAT thiếu scope workflow) (2026-11-13T09:55Z)

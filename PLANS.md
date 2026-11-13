@@ -128,6 +128,8 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 | T3.5-d | dev-console | Console cross-sandbox: `WEBHUB_ORIGIN`/`WEBHUB_QUERY` + `NEXT_PUBLIC_WEBHUB_URL`/`NEXT_PUBLIC_WEBHUB_QUERY` + CORS hub `/v1/*` | T3-c | Console sandbox khác chạy WebHub mode | **done** |
 | T3.5-e | ops | Owner switchover: dùng UI thật, scale worker, (tùy chốt) dọn đường VPS | T3.5-c | Owner xác nhận "hub dùng được" | todo |
 | T3.6-W | apps/worker | Worker Next.js UI tại :3000 — setup/status form, config `.worker-config.json` (env vẫn override cho headless), runtime start/stop singleton, strict port, `/api/health` giữ nguyên | T3.5-b | Verify a–h bằng browser PASS; docs runbook viết lại | **done (W1 sandbox verified)** |
+| T3.6-H | webhub+dev-console | Hub UI 3 tab (:3000): Console giữ nguyên / Workers (poll 5s, Worker Connection Info + WORKER_SECRET box) / Stats (CSS bars); webhub thêm `GET /internal/workers` read-only (X-Worker-Secret) | T3.5-b | Browser verify tabs; secret không xuống client; docs/api.md cập nhật | **done — commit 9c13ea7 + a490e11** |
+| T3.7-D | dev-console+ops | **API Docs như OpenAI cho kết nối bên ngoài**: tab `/docs` (sidebar TOC, scroll-spy, code copy, `{HUB}` auto-fill origin) + export site static self-contained (`bun run export:docs` → `docs-site/index.html`) + workflow GitHub Pages + runbook 40-github-pages.md (trả lời: docs deploy GH Pages được; hub/console thì không — cần server runtime) | T3.6-H | /docs render + copy + scroll-spy PASS (browser); static site fill `{HUB}` + copy PASS; lint sạch file mới; API test đúng docs (healthz/SSE/401) | **done** |
 
 ### Decision gates
 - **G1 — transport**: **PASS (T0-b)** → WS confirmed.

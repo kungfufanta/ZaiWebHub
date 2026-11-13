@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "bun run scripts/build-compat.ts && next dev -p 3005",
     "build:compat": "bun run scripts/build-compat.ts",
+    "export:docs": "bun run scripts/export-docs-site.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint ."

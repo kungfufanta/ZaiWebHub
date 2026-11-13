@@ -1,16 +1,17 @@
 'use client';
 
-// Hub UI nav — 3 tab (3.6-H): Console (giữ nguyên) / Workers / Stats.
+// Hub UI nav — 4 tab (3.6-H + 3.7-D): Console (giữ nguyên) / Workers / Stats / Docs.
 // Sticky trên cùng, active theo pathname, responsive mobile (icon + label gọn).
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Gauge, MessagesSquare, Server, Waypoints } from 'lucide-react';
+import { BookOpen, Gauge, MessagesSquare, Server, Waypoints } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const TABS = [
   { href: '/', label: 'Console', icon: MessagesSquare },
   { href: '/workers', label: 'Workers', icon: Server },
   { href: '/stats', label: 'Stats', icon: Gauge },
+  { href: '/docs', label: 'Docs', icon: BookOpen },
 ] as const;
 
 export function HubNav() {

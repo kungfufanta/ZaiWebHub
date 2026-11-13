@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Reference — ZaiWebHub</title>
+<meta name="description" content="Tài liệu API của ZaiWebHub hub — tương thích OpenAI Chat Completions (SSE)">
+<style>
+:root{
+  --bg:#ffffff;--fg:#18181b;--muted:#52525b;--faint:#a1a1aa;--border:#e4e4e7;
+  --card:#ffffff;--card2:#fafafa;--accentbg:#f4f4f5;
+  --codebg:#0f0f13;--codefg:#f4f4f5;--codehead:#18181b;--codeborder:#27272a;--codeMuted:#a1a1aa;
+  --ic-bg:#f4f4f5;--ic-fg:#18181b;
+  --green:#059669;--green-bg:#ecfdf5;--green-bd:#a7f3d0;
+  --amber:#d97706;--amber-bg:#fffbeb;--amber-bd:#fde68a;
+  --primary:#18181b;--primary-fg:#fafafa;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#09090b;--fg:#fafafa;--muted:#a1a1aa;--faint:#71717a;--border:#27272a;
+    --card:#0c0c0f;--card2:#111113;--accentbg:#1c1c1f;
+    --codebg:#0c0c0f;--codefg:#f4f4f5;--codehead:#18181b;--codeborder:#27272a;--codeMuted:#a1a1aa;
+    --ic-bg:#27272a;--ic-fg:#fafafa;
+    --green:#34d399;--green-bg:#06281e;--green-bd:#065f46;
+    --amber:#fbbf24;--amber-bg:#2a1d05;--amber-bd:#92400e;
+    --primary:#fafafa;--primary-fg:#18181b;
+  }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.ic{background:var(--ic-bg);color:var(--ic-fg);border-radius:4px;padding:.1em .35em;font-size:.86em;word-break:break-word}
+strong{font-weight:600}
+
+/* header */
+.top{position:sticky;top:0;z-index:40;background:var(--card);border-bottom:1px solid var(--border);backdrop-filter:blur(8px)}
+.topin{max-width:1120px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:9px 16px}
+.logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;min-width:0}
+.logodot{width:26px;height:26px;border-radius:8px;background:var(--primary);color:var(--primary-fg);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.badge{margin-left:auto;border:1px solid var(--border);border-radius:9999px;padding:2px 10px;font-family:ui-monospace,monospace;font-size:10px;color:var(--muted);white-space:nowrap}
+
+/* layout */
+.wrap{max-width:1120px;margin:0 auto;display:flex;gap:28px;padding:22px 16px 40px}
+.sidebar{display:none}
+@media(min-width:960px){.sidebar{display:block;width:230px;flex-shrink:0}.sidenav{position:sticky;top:58px;max-height:calc(100vh - 74px);overflow-y:auto;padding-bottom:12px}}
+.content{flex:1;min-width:0}
+.slbl{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 8px;margin:6px 0 2px}
+.slink{display:block;border-radius:8px;padding:6px 8px;font-size:12.5px;font-weight:500;color:var(--muted)}
+.slink:hover{background:var(--accentbg);color:var(--fg)}
+.slink.active{background:var(--primary);color:var(--primary-fg)}
+.ssub{display:flex;align-items:center;gap:6px;margin-left:14px;padding:3px 8px;font-size:10.5px;color:var(--faint);border-radius:6px;font-family:ui-monospace,monospace}
+.ssub:hover{background:var(--accentbg);color:var(--fg)}
+
+/* chips mobile */
+.chips{display:flex;gap:6px;overflow-x:auto;padding:12px 16px 0}
+@media(min-width:960px){.chips{display:none}}
+.chip{flex-shrink:0;border:1px solid var(--border);background:var(--card);border-radius:9999px;padding:4px 12px;font-size:11.5px;color:var(--muted)}
+.chip:hover{background:var(--accentbg);color:var(--fg)}
+.chip.active{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
+
+/* base url box */
+.bub{border:1px solid var(--border);background:var(--card2);border-radius:10px;padding:10px 12px;margin:0 0 18px;font-size:12.5px;color:var(--muted)}
+.bub input{margin-left:6px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-family:ui-monospace,monospace;font-size:12px;width:min(340px,60vw)}
+.bub .bubv{color:var(--fg)}
+
+/* sections */
+.ds{margin:0 0 34px;scroll-margin-top:76px}
+.ds h2{font-size:17px;font-weight:600;letter-spacing:-.01em;margin:0 0 6px}
+.dblur{margin:0 0 12px;font-size:13px;color:var(--muted)}
+.dp{margin:8px 0;font-size:13px;color:var(--muted)}
+.dul{margin:8px 0;padding-left:18px}
+.dul li{font-size:13px;color:var(--muted);margin:5px 0}
+.dul li::marker{color:var(--faint)}
+
+/* tables */
+.dtw{overflow-x:auto;border:1px solid var(--border);border-radius:10px;margin:10px 0}
+.dt{width:100%;border-collapse:collapse;font-size:12.5px;text-align:left}
+.dt th{background:var(--card2);padding:8px 12px;font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)}
+.dt td{padding:8px 12px;color:var(--muted);border-bottom:1px solid var(--border);vertical-align:top}
+.dt tbody tr:last-child td{border-bottom:none}
+.dt .dt0{white-space:nowrap;color:var(--fg);font-weight:500}
+
+/* notes */
+.dnote{display:flex;gap:10px;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:12.5px}
+.dnote p{margin:0}
+.note-info{background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green)}
+.note-warn{background:var(--amber-bg);border:1px solid var(--amber-bd);color:var(--amber)}
+.nic{flex-shrink:0;width:18px;height:18px;border-radius:9999px;border:1.5px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-top:2px}
+
+/* endpoint card */
+.ep{border:1px solid var(--border);border-radius:12px;background:var(--card);margin:14px 0;overflow:hidden;scroll-margin-top:76px}
+.eph{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)}
+.epp{font-size:13px;font-weight:600;word-break:break-all}
+.eps{flex-basis:100%;font-size:11.5px;color:var(--muted)}
+@media(min-width:700px){.eps{flex-basis:auto;flex:1;text-align:right}}
+.epb{padding:12px 14px}
+.mb{display:inline-flex;border-radius:6px;padding:2px 8px;font-family:ui-monospace,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border:1px solid}
+.m-get{color:var(--green);background:var(--green-bg);border-color:var(--green-bd)}
+.m-post{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-bd)}
+.m-sse{color:#a855f7;background:#faf5ff;border-color:#e9d5ff}
+.m-ws{color:#e11d48;background:#fff1f2;border-color:#fecdd3}
+@media (prefers-color-scheme:dark){
+  .m-sse{color:#c084fc;background:#241432;border-color:#581c87}
+  .m-ws{color:#fb7185;background:#2b0d12;border-color:#9f1239}
+}
+
+/* code block */
+.cb{margin:12px 0;border:1px solid var(--codeborder);border-radius:10px;background:var(--codebg);overflow:hidden}
+.cbh{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px;background:var(--codehead);border-bottom:1px solid var(--codeborder)}
+.cbt{font-size:11px;color:var(--codeMuted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cbr{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.cbl{background:#27272a;color:var(--codeMuted);border-radius:4px;padding:1px 6px;font-size:9.5px;text-transform:uppercase;font-family:ui-monospace,monospace}
+.copybtn{background:transparent;border:1px solid #3f3f46;color:var(--codeMuted);border-radius:5px;font-size:10px;font-family:ui-monospace,monospace;padding:2px 8px;cursor:pointer}
+.copybtn:hover{background:#27272a;color:var(--codefg)}
+.copybtn.done{color:#34d399;border-color:#065f46}
+.cb pre{margin:0;padding:12px;overflow:auto;max-height:560px}
+.cb code{color:var(--codefg);font-size:11.5px;line-height:1.65;white-space:pre}
+
+/* footer */
+.foot{border-top:1px solid var(--border);background:var(--card);margin-top:auto}
+.footin{max-width:1120px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:space-between;font-size:11.5px;color:var(--muted)}
+.footin .mono{font-family:ui-monospace,monospace;font-size:10px;color:var(--faint)}
+
+/* hints box cuối trang */
+.dhint{border:1px dashed var(--border);border-radius:10px;padding:10px 12px;margin-top:8px;font-size:12.5px;color:var(--muted)}
+.dhint .ic{margin:0 2px}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="topin">
+    <a class="logo" href="#"><span class="logodot" aria-hidden="true">◇</span>ZaiWebHub — API Reference</a>
+    <span class="badge">OpenAI-compatible · SSE</span>
+  </div>
+</header>
+<nav class="chips" aria-label="Mục lục (mobile)">
+<a class="chip" href="#overview">Tổng quan</a>
+<a class="chip" href="#authentication">Xác thực</a>
+<a class="chip" href="#healthz">GET /healthz</a>
+<a class="chip" href="#chat">POST /v1/chat/completions</a>
+<a class="chip" href="#workers">GET /internal/workers</a>
+<a class="chip" href="#worker-token">GET /internal/worker-token</a>
+<a class="chip" href="#ws">WS /worker — worker protocol</a>
+<a class="chip" href="#errors">Bảng mã lỗi tổng hợp</a>
+<a class="chip" href="#deployment">Deploy console &amp; hub ở đâu?</a>
+</nav>
+<div class="wrap">
+  <aside class="sidebar" aria-label="Mục lục">
+    <div class="sidenav">
+      <p class="slbl">Mục lục</p>
+<a class="slink" href="#overview">Tổng quan</a>
+<a class="slink" href="#authentication">Xác thực</a>
+<a class="slink" href="#healthz">GET /healthz</a><a class="ssub" href="#healthz-endpoint"><span class="ssm m-get">GET</span>/healthz</a>
+<a class="slink" href="#chat">POST /v1/chat/completions</a><a class="ssub" href="#chat-request"><span class="ssm m-sse">SSE</span>/v1/chat/completions</a>
+<a class="slink" href="#workers">GET /internal/workers</a><a class="ssub" href="#workers-endpoint"><span class="ssm m-get">GET</span>/internal/workers</a>
+<a class="slink" href="#worker-token">GET /internal/worker-token</a><a class="ssub" href="#worker-token-endpoint"><span class="ssm m-get">GET</span>/internal/worker-token</a>
+<a class="slink" href="#ws">WS /worker — worker protocol</a>
+<a class="slink" href="#errors">Bảng mã lỗi tổng hợp</a>
+<a class="slink" href="#deployment">Deploy console &amp; hub ở đâu?</a>
+    </div>
+  </aside>
+  <main class="content">
+    <div class="bub">
+      Base URL hub qua gateway công cộng: <code class="bubv">https://&lt;hub-host&gt;</code><span style="opacity:.7">?XTransformPort=3003</span>.
+      <div style="margin-top:6px">Điền HUB PUBLIC BASE URL để tự thay <code class="ic">{HUB}</code> trong mọi ví dụ:
+      <input id="hub-base-input" type="url" placeholder="https://<hub-host>" spellcheck="false" autocomplete="off"></div>
+    </div>
+<section id="overview" class="ds">
+  <h2>Tổng quan</h2>
+  <p class="dblur">Hub cung cấp endpoint chat kiểu OpenAI (`POST /v1/chat/completions`, SSE) + API nội bộ cho worker pool.</p>
+  <p class="dp">Base URL qua gateway công cộng của sandbox hub: <code class="ic">https://&lt;hub-host&gt;/&lt;path&gt;?XTransformPort=3003</code> — gateway Caddy forward theo query <code class="ic">XTransformPort</code>, hỗ trợ cả WebSocket upgrade. Trong nội bộ sandbox hub: <code class="ic">http://127.0.0.1:3003</code>. Trang này tự điền base URL hiện tại của bạn vào ví dụ (thay <code class="ic">{HUB}</code>).</p>
+<figure class="cb"><figcaption class="cbh"><span class="cbt">Quickstart — gọi chat bằng curl</span><span class="cbr"><span class="cbl">bash</span><button type="button" class="copybtn" data-target="code-1" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-1">curl -N -X POST &#39;{HUB}/v1/chat/completions?XTransformPort=3003&#39; \
+  -H &#39;Authorization: Bearer zhb_dev_default_key&#39; \
+  -H &#39;Content-Type: application/json&#39; \
+  -d &#39;{
+    &quot;model&quot;: &quot;glm-5.3&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Xin chào&quot;}],
+    &quot;stream&quot;: true,
+    &quot;conversation_id&quot;: &quot;demo-1&quot;
+  }&#39;</code></pre></figure>
+<div class="dnote note-info" role="note"><span class="nic" aria-hidden="true">i</span><p><code class="ic">zhb_dev_default_key</code> là key dev CÔNG KHAI theo thiết kế sandbox (MVP single tenant — không phải secret). Production: set env <code class="ic">TENANT_KEYS</code> trên hub để cấp key riêng cho từng tenant.</p></div>
+  
+</section>
+<section id="authentication" class="ds">
+  <h2>Xác thực</h2>
+  
+  <div class="dtw"><table class="dt"><thead><tr><th>Nhóm endpoint</th><th>Cơ chế</th><th>Header</th></tr></thead><tbody><tr><td class="dt0"><code class="ic">/v1/*</code> (chat cho client)</td><td>Bearer tenant key</td><td><code class="ic">Authorization: Bearer &lt;key&gt;</code> — khớp env <code class="ic">TENANT_KEYS</code> của hub</td></tr><tr><td class="dt0"><code class="ic">/internal/*</code> (worker-token, workers)</td><td>Shared secret</td><td><code class="ic">X-Worker-Secret: &lt;WORKER_SECRET&gt;</code> — timing-safe compare</td></tr><tr><td class="dt0"><code class="ic">/healthz</code></td><td>Không auth</td><td>—</td></tr><tr><td class="dt0"><code class="ic">/worker</code> (WS)</td><td>Hub-mint token trong frame đầu</td><td>— (xem mục WS)</td></tr></tbody></table></div>
+<div class="dnote note-warn" role="note"><span class="nic" aria-hidden="true">!</span><p>Thiếu/sai key hoặc secret → HTTP <strong>401</strong>. <code class="ic">WORKER_SECRET</code> là secret thật: KHÔNG commit, KHÔNG nhét vào code client, KHÔNG log giá trị.</p></div>
+  
+</section>
+<section id="healthz" class="ds">
+  <h2>GET /healthz</h2>
+  
+  
+  <article class="ep" id="healthz-endpoint" aria-label="GET /healthz">
+  <div class="eph"><span class="mb m-get">GET</span><code class="epp">/healthz</code><span class="eps">Liveness probe — không cần auth.</span></div>
+  <div class="epb"><figure class="cb"><figcaption class="cbh"><span class="cbt">Request</span><span class="cbr"><span class="cbl">bash</span><button type="button" class="copybtn" data-target="code-2" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-2">curl -s &#39;{HUB}/healthz?XTransformPort=3003&#39;</code></pre></figure>
+<figure class="cb"><figcaption class="cbh"><span class="cbt">Response 200</span><span class="cbr"><span class="cbl">json</span><button type="button" class="copybtn" data-target="code-3" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-3">{ &quot;ok&quot;: true, &quot;service&quot;: &quot;webhub&quot;, &quot;ts&quot;: 1794558892225 }</code></pre></figure></div>
+</article>
+</section>
+<section id="chat" class="ds">
+  <h2>POST /v1/chat/completions</h2>
+  <p class="dblur">Endpoint duy nhất client chạm tới — tương thích OpenAI Chat Completions ở chế độ stream. Hub BYTE-BLIND: chunk upstream được relay NGUYÊN XI, hub không parse/re-stringify.</p>
+  
+  <article class="ep" id="chat-request" aria-label="SSE /v1/chat/completions">
+  <div class="eph"><span class="mb m-sse">SSE</span><code class="epp">/v1/chat/completions</code><span class="eps">Chat stream SSE — ngắt dòng `data:` nguyên bản upstream, kết thúc bằng đúng 1 `data: [DONE]`.</span></div>
+  <div class="epb"><div class="dtw"><table class="dt"><thead><tr><th>Field</th><th>Type</th><th>Bắt buộc</th><th>Ghi chú</th></tr></thead><tbody><tr><td class="dt0"><code class="ic">messages</code></td><td><code class="ic">Array&lt;{role, content}&gt;</code></td><td>✅</td><td>role: <code class="ic">system</code>/<code class="ic">user</code>/<code class="ic">assistant</code>, content string; message sai shape bị drop; rỗng hết → 400. Có <code class="ic">conversation_id</code> → history được prepend</td></tr><tr><td class="dt0"><code class="ic">stream</code></td><td><code class="ic">boolean</code></td><td>✅ <code class="ic">true</code></td><td>MVP chỉ hỗ trợ SSE pass-through — khác → 400</td></tr><tr><td class="dt0"><code class="ic">model</code></td><td><code class="ic">string</code></td><td>—</td><td>mặc định <code class="ic">glm-5.3</code></td></tr><tr><td class="dt0"><code class="ic">conversation_id</code></td><td><code class="ic">string</code></td><td>—</td><td>bật bộ nhớ hội thoại (user messages được lưu, prepend lần sau)</td></tr><tr><td class="dt0"><code class="ic">thinking</code></td><td><code class="ic">{type: &quot;enabled&quot;|&quot;disabled&quot;}</code></td><td>—</td><td>mặc định <code class="ic">enabled</code></td></tr><tr><td class="dt0"><code class="ic">clear_thinking</code></td><td><code class="ic">boolean</code></td><td>—</td><td>mặc định <code class="ic">true</code></td></tr><tr><td class="dt0"><code class="ic">max_tokens</code></td><td><code class="ic">int &gt; 0</code></td><td>—</td><td>—</td></tr><tr><td class="dt0"><code class="ic">temperature</code></td><td><code class="ic">0–2</code></td><td>—</td><td>—</td></tr></tbody></table></div>
+<figure class="cb"><figcaption class="cbh"><span class="cbt">Request (curl)</span><span class="cbr"><span class="cbl">bash</span><button type="button" class="copybtn" data-target="code-4" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-4">curl -N -X POST &#39;{HUB}/v1/chat/completions?XTransformPort=3003&#39; \
+  -H &#39;Authorization: Bearer zhb_dev_default_key&#39; \
+  -H &#39;Content-Type: application/json&#39; \
+  -d &#39;{
+    &quot;model&quot;: &quot;glm-5.3&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Xin chào&quot;}],
+    &quot;stream&quot;: true,
+    &quot;conversation_id&quot;: &quot;demo-1&quot;
+  }&#39;</code></pre></figure>
+<figure class="cb"><figcaption class="cbh"><span class="cbt">Response 200 — wire format SSE (headers + thứ tự điển hình)</span><span class="cbr"><span class="cbl">text</span><button type="button" class="copybtn" data-target="code-5" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-5">Content-Type: text/event-stream
+Cache-Control: no-cache, no-transform
+X-Job-Id: &lt;uuid&gt;            ← trace / đối chiếu hub log
+X-Request-Id: &lt;uuid&gt;
+
+data: {&quot;choices&quot;:[{&quot;delta&quot;:{&quot;reasoning_content&quot;:&quot;...&quot;}}], ...}   ← thinking (nếu upstream có)
+data: {&quot;choices&quot;:[{&quot;delta&quot;:{&quot;content&quot;:&quot;...&quot;}}], ...}             ← answer chunks
+data: {&quot;choices&quot;:[{&quot;delta&quot;:{},&quot;finish_reason&quot;:&quot;stop&quot;}], &quot;usage&quot;: {...}, ...}  ← chunk cuối
+data: [DONE]                                                     ← kết thúc (đúng 1 dòng)</code></pre></figure>
+<figure class="cb"><figcaption class="cbh"><span class="cbt">Client JavaScript — đọc stream bằng fetch + ReadableStream</span><span class="cbr"><span class="cbl">js</span><button type="button" class="copybtn" data-target="code-6" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-6">const HUB = &#39;https://&lt;hub-host&gt;&#39;; // hoặc window.location.origin nếu client cùng host hub
+const KEY = &#39;zhb_dev_default_key&#39;;
+
+const res = await fetch(`${HUB}/v1/chat/completions?XTransformPort=3003`, {
+  method: &#39;POST&#39;,
+  headers: { Authorization: `Bearer ${KEY}`, &#39;Content-Type&#39;: &#39;application/json&#39; },
+  body: JSON.stringify({
+    model: &#39;glm-5.3&#39;,
+    messages: [{ role: &#39;user&#39;, content: &#39;Xin chào&#39; }],
+    stream: true,
+    conversation_id: &#39;demo-1&#39;,
+  }),
+});
+
+if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buffer = &#39;&#39;;
+let answer = &#39;&#39;;
+
+for (;;) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split(&#39;\n&#39;);
+  buffer = lines.pop() ?? &#39;&#39;;
+  for (const line of lines) {
+    if (line.startsWith(&#39;event: error&#39;)) {
+      console.error(&#39;stream error frame:&#39;, line);
+      continue;
+    }
+    if (!line.startsWith(&#39;data: &#39;)) continue;
+    const payload = line.slice(6);
+    if (payload === &#39;[DONE]&#39;) continue; // kết thúc sạch
+    const chunk = JSON.parse(payload);
+    const delta = chunk.choices?.[0]?.delta ?? {};
+    if (delta.reasoning_content) console.debug(&#39;thinking:&#39;, delta.reasoning_content);
+    if (delta.content) answer += delta.content;
+  }
+}
+console.log(&#39;answer:&#39;, answer);</code></pre></figure>
+<figure class="cb"><figcaption class="cbh"><span class="cbt">Client Python — requests + iter_lines</span><span class="cbr"><span class="cbl">python</span><button type="button" class="copybtn" data-target="code-7" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-7">import json
+import requests
+
+HUB = &quot;https://&lt;hub-host&gt;&quot;          # public URL sandbox hub
+KEY = &quot;zhb_dev_default_key&quot;
+
+with requests.post(
+    f&quot;{HUB}/v1/chat/completions&quot;,
+    params={&quot;XTransformPort&quot;: 3003},  # gateway sandbox forward tới hub :3003
+    headers={&quot;Authorization&quot;: f&quot;Bearer {KEY}&quot;},
+    json={
+        &quot;model&quot;: &quot;glm-5.3&quot;,
+        &quot;stream&quot;: True,
+        &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Xin chào&quot;}],
+    },
+    stream=True,
+    timeout=120,
+) as r:
+    r.raise_for_status()
+    for line in r.iter_lines(decode_unicode=True):
+        if not line or not line.startswith(&quot;data: &quot;):
+            continue
+        payload = line[6:]
+        if payload == &quot;[DONE]&quot;:
+            break
+        delta = json.loads(payload)[&quot;choices&quot;][0][&quot;delta&quot;]
+        print(delta.get(&quot;content&quot;, &quot;&quot;), end=&quot;&quot;, flush=True)</code></pre></figure>
+<div class="dtw"><table class="dt"><thead><tr><th>HTTP</th><th>Lỗi JSON trước khi stream</th></tr></thead><tbody><tr><td class="dt0"><strong>400</strong></td><td>body không phải JSON; sai schema (<code class="ic">messages</code> rỗng/sai shape, <code class="ic">max_tokens</code> &lt;= 0, <code class="ic">temperature</code> ngoài 0–2…); <code class="ic">stream</code> khác <code class="ic">true</code>; job payload fail schema</td></tr><tr><td class="dt0"><strong>401</strong></td><td>thiếu/sai <code class="ic">Authorization: Bearer &lt;key&gt;</code> → <code class="ic">{&quot;error&quot;:{&quot;message&quot;:&quot;invalid api key&quot;}}</code></td></tr></tbody></table></div>
+<figure class="cb"><figcaption class="cbh"><span class="cbt">Lỗi TRONG stream (sau 200 — worker chết giữa stream…)</span><span class="cbr"><span class="cbl">text</span><button type="button" class="copybtn" data-target="code-8" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-8">event: error
+data: {&quot;error&quot;:{&quot;message&quot;:&quot;upstream connection lost (worker died midstream)&quot;,&quot;type&quot;:&quot;upstream_error&quot;}}
+
+data: [DONE]</code></pre></figure>
+<ul class="dul"><li><code class="ic">type</code> của frame lỗi ∈ <code class="ic">upstream_error | cancelled | timeout | quota | unknown</code>.</li><li>Dispatch least-loaded: job đi worker có <code class="ic">inflight</code> thấp nhất (tie → worker đăng ký trước).</li><li>Job CHƯA có chunk đầu → re-dispatch tối đa <strong>1</strong> lần (worker chết / ack-timeout 30s).</li><li>ĐÃ có chunk đầu → <strong>at-most-once</strong>, không re-dispatch; client disconnect → hub gửi <code class="ic">job.cancel</code>.</li></ul></div>
+</article>
+</section>
+<section id="workers" class="ds">
+  <h2>GET /internal/workers</h2>
+  <p class="dblur">Snapshot registry + stats của worker pool — nguồn dữ liệu tab Workers / Stats của Hub UI.</p>
+  
+  <article class="ep" id="workers-endpoint" aria-label="GET /internal/workers">
+  <div class="eph"><span class="mb m-get">GET</span><code class="epp">/internal/workers</code><span class="eps">Read-only. Header `X-Worker-Secret` bắt buộc (khớp env `WORKER_SECRET` của hub) — sai/thiếu → 401.</span></div>
+  <div class="epb"><figure class="cb"><figcaption class="cbh"><span class="cbt">Request</span><span class="cbr"><span class="cbl">bash</span><button type="button" class="copybtn" data-target="code-9" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-9">curl -s &#39;{HUB}/internal/workers?XTransformPort=3003&#39; \
+  -H &#39;X-Worker-Secret: &lt;WORKER_SECRET&gt;&#39;</code></pre></figure>
+<figure class="cb"><figcaption class="cbh"><span class="cbt">Response 200</span><span class="cbr"><span class="cbl">json</span><button type="button" class="copybtn" data-target="code-10" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-10">{
+  &quot;workers&quot;: [
+    {
+      &quot;id&quot;: &quot;w2-c-6af6b9ae-140d72b5-5aff54cafef5&quot;,
+      &quot;worker_id&quot;: &quot;w2-c-6af6b9ae-140d72b5-5aff54cafef5&quot;,
+      &quot;status&quot;: &quot;online&quot;,
+      &quot;connected_at&quot;: 1794558913028,
+      &quot;last_heartbeat&quot;: 1794558958030,
+      &quot;inflight&quot;: 0,
+      &quot;total_jobs&quot;: 2,
+      &quot;capabilities&quot;: {
+        &quot;worker_id&quot;: &quot;w2-…&quot;,
+        &quot;tenant_id&quot;: &quot;default&quot;,
+        &quot;models&quot;: [&quot;glm-5.3&quot;],
+        &quot;concurrency&quot;: 2,
+        &quot;protocol_version&quot;: 1
+      }
+    }
+  ],
+  &quot;uptime_seconds&quot;: 76,
+  &quot;total_jobs_all_time&quot;: 2
+}</code></pre></figure>
+<div class="dtw"><table class="dt"><thead><tr><th>Field</th><th>Ý nghĩa</th></tr></thead><tbody><tr><td class="dt0"><code class="ic">workers[].id</code></td><td>worker_id (<code class="ic">worker_id</code> giữ lại cho tiện debug — cùng giá trị)</td></tr><tr><td class="dt0"><code class="ic">workers[].status</code></td><td><code class="ic">online</code> (đang trong registry) / <code class="ic">offline</code> (mất kết nối ≤ 15 phút, quá TTL rơi khỏi danh sách)</td></tr><tr><td class="dt0"><code class="ic">connected_at</code></td><td>epoch ms — mốc connection hiện tại (re-register cập nhật mới)</td></tr><tr><td class="dt0"><code class="ic">last_heartbeat</code></td><td>epoch ms — authoritative từ registry khi online</td></tr><tr><td class="dt0"><code class="ic">inflight</code></td><td>số slot đang dùng (cap = <code class="ic">capabilities.concurrency</code>)</td></tr><tr><td class="dt0"><code class="ic">total_jobs</code></td><td>số job DUY NHẤT worker đã nhận (đếm theo <code class="ic">job.ack</code>, dedupe toàn hub)</td></tr><tr><td class="dt0"><code class="ic">total_jobs_all_time</code></td><td>tổng job duy nhất đã tới tay mọi worker</td></tr><tr><td class="dt0"><code class="ic">uptime_seconds</code></td><td>uptime tiến trình hub</td></tr></tbody></table></div></div>
+</article>
+</section>
+<section id="worker-token" class="ds">
+  <h2>GET /internal/worker-token</h2>
+  <p class="dblur">Worker gọi endpoint này ĐẦU TIÊN (kèm `X-Worker-Secret`) để lấy HMAC token TTL ngắn, rồi dùng trong frame `worker.register` đầu tiên trên WS.</p>
+  
+  <article class="ep" id="worker-token-endpoint" aria-label="GET /internal/worker-token">
+  <div class="eph"><span class="mb m-get">GET</span><code class="epp">/internal/worker-token</code><span class="eps">Mint token cho worker WS — sai/thiếu `X-Worker-Secret` → 401.</span></div>
+  <div class="epb"><div class="dtw"><table class="dt"><thead><tr><th>Query</th><th>Mặc định</th><th>Ghi chú</th></tr></thead><tbody><tr><td class="dt0"><code class="ic">tenant_id</code></td><td><code class="ic">default</code></td><td>phải khớp <code class="ic">capabilities.tenant_id</code> lúc register</td></tr><tr><td class="dt0"><code class="ic">ttl</code></td><td><code class="ic">60</code></td><td>giây, kẹp trong <code class="ic">[5, 300]</code></td></tr></tbody></table></div>
+<figure class="cb"><figcaption class="cbh"><span class="cbt">Request + Response 200</span><span class="cbr"><span class="cbl">bash</span><button type="button" class="copybtn" data-target="code-11" aria-label="Copy code">copy</button></span></figcaption><pre><code id="code-11">curl -s &#39;{HUB}/internal/worker-token?XTransformPort=3003&#39; \
+  -H &#39;X-Worker-Secret: &lt;WORKER_SECRET&gt;&#39;
+
+{ &quot;token&quot;: &quot;&lt;payload&gt;.&lt;sig&gt;&quot;, &quot;tenant_id&quot;: &quot;default&quot;, &quot;ttl_seconds&quot;: 60, &quot;expires_at&quot;: 1794558972000 }</code></pre></figure>
+<div class="dnote note-info" role="note"><span class="nic" aria-hidden="true">i</span><p>Trên Hub UI (tab Workers) có sẵn box <strong>Worker Connection Info</strong> sinh đúng URL này từ HUB PUBLIC BASE URL — copy rồi paste vào form setup của worker sandbox mới.</p></div></div>
+</article>
+</section>
+<section id="ws" class="ds">
+  <h2>WS /worker — worker protocol</h2>
+  <p class="dblur">Worker TỰ connect outbound tới `wss://&lt;hub-host&gt;/worker?XTransformPort=3003` — hub không bao giờ inbound vào sandbox worker.</p>
+  <ul class="dul"><li>Frame ĐẦU TIÊN phải là <code class="ic">worker.register</code> hợp lệ (token + tenant + protocol_version khớp) — sai bất cứ điều nào → close <strong>4401</strong>.</li><li>Duplicate worker_id (2 connection cùng ID) → connection cũ bị thay, close <strong>4409</strong>.</li><li>Heartbeat &gt; <strong>45s</strong> → sweep coi worker chết (sweep mỗi 10s); <code class="ic">job.ack</code> phải tới trong <strong>30s</strong> sau dispatch (visibility timeout).</li><li>Control frames = JSON TEXT; job chunk = BINARY envelope F4: <code class="ic">[16B job_id][4B seq BE][raw SSE bytes nguyên xi]</code> (header 20 bytes).</li></ul>
+<div class="dtw"><table class="dt"><thead><tr><th>Chiều</th><th>Frame</th><th>Ghi chú</th></tr></thead><tbody><tr><td class="dt0">W → H</td><td><code class="ic">worker.register {type, capabilities, token}</code></td><td>capabilities: <code class="ic">{worker_id, tenant_id, models[], concurrency, protocol_version}</code></td></tr><tr><td class="dt0">W → H</td><td><code class="ic">worker.heartbeat {type, ts, inflight}</code></td><td><code class="ic">inflight</code> authoritative</td></tr><tr><td class="dt0">W → H</td><td><code class="ic">job.ack {type, job_id}</code></td><td>trong 30s sau dispatch</td></tr><tr><td class="dt0">W → H</td><td>binary <code class="ic">job.chunk</code></td><td>envelope F4 — raw SSE bytes relay nguyên xi</td></tr><tr><td class="dt0">W → H</td><td><code class="ic">job.done {type, job_id, finish_reason, usage?, upstream_done_relayed?}</code></td><td><code class="ic">upstream_done_relayed:true</code> → hub không flush thêm <code class="ic">[DONE]</code></td></tr><tr><td class="dt0">W → H</td><td><code class="ic">job.error {type, job_id, error:{message, type}}</code></td><td>trước chunk đầu → requeue (max 1); sau chunk → <code class="ic">event:error</code> + <code class="ic">[DONE]</code> cho client</td></tr><tr><td class="dt0">H → W</td><td><code class="ic">job.dispatch {type, job}</code></td><td>job = JobPayload đầy đủ</td></tr><tr><td class="dt0">H → W</td><td><code class="ic">job.cancel {type, job_id, reason?}</code></td><td>user disconnect / hub cancel</td></tr><tr><td class="dt0">H → W</td><td><code class="ic">hub.ping {type, ts}</code></td><td>keepalive</td></tr></tbody></table></div>
+<p class="dp">Chi tiết đầy đủ của wire contract: <code class="ic">packages/protocol/src/frames.ts</code> (zod — 2 đầu validate) và <code class="ic">docs/api.md</code>.</p>
+  
+</section>
+<section id="errors" class="ds">
+  <h2>Bảng mã lỗi tổng hợp</h2>
+  
+  <div class="dtw"><table class="dt"><thead><tr><th>HTTP / mã</th><th>Endpoint</th><th>Nguyên nhân</th></tr></thead><tbody><tr><td class="dt0"><strong>400</strong></td><td><code class="ic">/v1/chat/completions</code></td><td>body/schema/stream/messages/payload không hợp lệ</td></tr><tr><td class="dt0"><strong>401</strong></td><td><code class="ic">/v1/chat/completions</code></td><td>sai/thiếu Bearer key</td></tr><tr><td class="dt0"><strong>401</strong></td><td><code class="ic">/internal/worker-token</code>, <code class="ic">/internal/workers</code></td><td>thiếu/sai <code class="ic">X-Worker-Secret</code></td></tr><tr><td class="dt0"><strong>404</strong></td><td>bất kỳ</td><td>path không tồn tại (<code class="ic">{&quot;error&quot;:{&quot;message&quot;:&quot;not found&quot;}}</code>)</td></tr><tr><td class="dt0">WS <strong>4401</strong></td><td><code class="ic">/worker</code></td><td>frame đầu không phải register hợp lệ / token hết hạn / tenant sai / protocol_version sai</td></tr><tr><td class="dt0">WS <strong>4409</strong></td><td><code class="ic">/worker</code></td><td>duplicate worker_id (connection cũ bị thay)</td></tr><tr><td class="dt0">SSE <code class="ic">event: error</code></td><td><code class="ic">/v1/chat/completions</code></td><td>lỗi sau khi stream bắt đầu — luôn kèm <code class="ic">data: [DONE]</code> kết thúc sạch</td></tr></tbody></table></div>
+  
+</section>
+<section id="deployment" class="ds">
+  <h2>Deploy console &amp; hub ở đâu?</h2>
+  <p class="dblur">Trả lời câu hỏi thường gặp: chạy được trên GitHub Pages không? — Site docs NÀY chạy được, hub/console thì không.</p>
+  <div class="dtw"><table class="dt"><thead><tr><th>Thành phần</th><th>GitHub Pages?</th><th>Nơi chạy phù hợp</th></tr></thead><tbody><tr><td class="dt0"><strong>Site docs static</strong> (chính trang này, export bằng <code class="ic">bun run export:docs</code>)</td><td>✅ CÓ</td><td>GitHub Pages / bất kỳ static host nào</td></tr><tr><td class="dt0"><strong>Hub (webhub :3003)</strong></td><td>❌ KHÔNG</td><td>Cần Node runtime + WebSocket + HMAC token + secret → VPS chính / Fly.io / Railway / container nào đó có port công khai</td></tr><tr><td class="dt0"><strong>Console (Next.js :3000)</strong></td><td>❌ KHÔNG (full)</td><td>Cần server-side routes giữ secret (<code class="ic">/api/workers</code>, <code class="ic">/api/worker-secret</code>) → Vercel (set env <code class="ic">WORKER_SECRET</code>, <code class="ic">HUB_INTERNAL_URL</code>) hoặc chạy cùng VPS với hub</td></tr><tr><td class="dt0"><strong>Worker (apps/worker)</strong></td><td>❌ KHÔNG</td><td>Sandbox ephemeral Z.AI — tự connect outbound ra hub, không cần inbound</td></tr></tbody></table></div>
+<ul class="dul"><li>Deploy docs lên GitHub Pages (CI tự chạy khi <code class="ic">api-docs.ts</code> đổi): workflow <code class="ic">deploy-docs.yml</code> build artifact từ <code class="ic">apps/dev-console/docs-site/</code> rồi deploy qua <code class="ic">actions/deploy-pages</code> — nội dung workflow lưu sẵn tại <code class="ic">docs/deploy/github-pages-workflow.yml</code> (tạo file qua GitHub web UI nếu PAT thiếu scope workflow).</li><li>Deploy THỦ CÔNG: chạy <code class="ic">bun apps/dev-console/scripts/export-docs-site.ts</code> → push <code class="ic">apps/dev-console/docs-site/</code> lên branch <code class="ic">gh-pages</code> → Settings → Pages → Source: *Deploy from a branch* → chọn <code class="ic">gh-pages / root</code>.</li><li>Repo GitHub Pages cần bật trong Settings → Pages trước khi workflow deploy chạy được lần đầu.</li><li>Chi tiết đầy đủ: <code class="ic">docs/deploy/40-github-pages.md</code>.</li></ul>
+<div class="dnote note-info" role="note"><span class="nic" aria-hidden="true">i</span><p>Tại sao hub không chạy được trên GitHub Pages: Pages chỉ serve file TĨNH — không có tiến trình Node, không WebSocket server, không biến env secret, không mint token. Hub là tiến trình Node Hono sống bằng WS persistent connections.</p></div>
+  
+</section>
+    <div class="dhint">Nguồn sự thật wire contract: <code class="ic">docs/api.md</code> + <code class="ic">packages/protocol</code>.
+    Site này là bản EXPORT STATIC của tab Docs trên Hub UI (repo <code class="ic">kungfufanta/ZaiWebHub</code>, script <code class="ic">apps/dev-console/scripts/export-docs-site.ts</code>).</div>
+  </main>
+</div>
+<footer class="foot">
+  <div class="footin">
+    <span>ZaiWebHub docs — static site cho GitHub Pages · docs/api.md</span>
+    <span class="mono">OpenAI-compatible · SSE · least-loaded dispatch</span>
+  </div>
+</footer>
+<script>
+(function(){
+  // 1) {HUB} fill từ ô input
+  var ORIGS = {"code-1":"curl -N -X POST '{HUB}/v1/chat/completions?XTransformPort=3003' \\\n  -H 'Authorization: Bearer zhb_dev_default_key' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"model\": \"glm-5.3\",\n    \"messages\": [{\"role\": \"user\", \"content\": \"Xin chào\"}],\n    \"stream\": true,\n    \"conversation_id\": \"demo-1\"\n  }'","code-2":"curl -s '{HUB}/healthz?XTransformPort=3003'","code-3":"{ \"ok\": true, \"service\": \"webhub\", \"ts\": 1794558892225 }","code-4":"curl -N -X POST '{HUB}/v1/chat/completions?XTransformPort=3003' \\\n  -H 'Authorization: Bearer zhb_dev_default_key' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"model\": \"glm-5.3\",\n    \"messages\": [{\"role\": \"user\", \"content\": \"Xin chào\"}],\n    \"stream\": true,\n    \"conversation_id\": \"demo-1\"\n  }'","code-5":"Content-Type: text/event-stream\nCache-Control: no-cache, no-transform\nX-Job-Id: \u003cuuid>            ← trace / đối chiếu hub log\nX-Request-Id: \u003cuuid>\n\ndata: {\"choices\":[{\"delta\":{\"reasoning_content\":\"...\"}}], ...}   ← thinking (nếu upstream có)\ndata: {\"choices\":[{\"delta\":{\"content\":\"...\"}}], ...}             ← answer chunks\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}], \"usage\": {...}, ...}  ← chunk cuối\ndata: [DONE]                                                     ← kết thúc (đúng 1 dòng)","code-6":"const HUB = 'https://\u003chub-host>'; // hoặc window.location.origin nếu client cùng host hub\nconst KEY = 'zhb_dev_default_key';\n\nconst res = await fetch(`${HUB}/v1/chat/completions?XTransformPort=3003`, {\n  method: 'POST',\n  headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },\n  body: JSON.stringify({\n    model: 'glm-5.3',\n    messages: [{ role: 'user', content: 'Xin chào' }],\n    stream: true,\n    conversation_id: 'demo-1',\n  }),\n});\n\nif (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);\n\nconst reader = res.body.getReader();\nconst decoder = new TextDecoder();\nlet buffer = '';\nlet answer = '';\n\nfor (;;) {\n  const { done, value } = await reader.read();\n  if (done) break;\n  buffer += decoder.decode(value, { stream: true });\n  const lines = buffer.split('\\n');\n  buffer = lines.pop() ?? '';\n  for (const line of lines) {\n    if (line.startsWith('event: error')) {\n      console.error('stream error frame:', line);\n      continue;\n    }\n    if (!line.startsWith('data: ')) continue;\n    const payload = line.slice(6);\n    if (payload === '[DONE]') continue; // kết thúc sạch\n    const chunk = JSON.parse(payload);\n    const delta = chunk.choices?.[0]?.delta ?? {};\n    if (delta.reasoning_content) console.debug('thinking:', delta.reasoning_content);\n    if (delta.content) answer += delta.content;\n  }\n}\nconsole.log('answer:', answer);","code-7":"import json\nimport requests\n\nHUB = \"https://\u003chub-host>\"          # public URL sandbox hub\nKEY = \"zhb_dev_default_key\"\n\nwith requests.post(\n    f\"{HUB}/v1/chat/completions\",\n    params={\"XTransformPort\": 3003},  # gateway sandbox forward tới hub :3003\n    headers={\"Authorization\": f\"Bearer {KEY}\"},\n    json={\n        \"model\": \"glm-5.3\",\n        \"stream\": True,\n        \"messages\": [{\"role\": \"user\", \"content\": \"Xin chào\"}],\n    },\n    stream=True,\n    timeout=120,\n) as r:\n    r.raise_for_status()\n    for line in r.iter_lines(decode_unicode=True):\n        if not line or not line.startswith(\"data: \"):\n            continue\n        payload = line[6:]\n        if payload == \"[DONE]\":\n            break\n        delta = json.loads(payload)[\"choices\"][0][\"delta\"]\n        print(delta.get(\"content\", \"\"), end=\"\", flush=True)","code-8":"event: error\ndata: {\"error\":{\"message\":\"upstream connection lost (worker died midstream)\",\"type\":\"upstream_error\"}}\n\ndata: [DONE]","code-9":"curl -s '{HUB}/internal/workers?XTransformPort=3003' \\\n  -H 'X-Worker-Secret: \u003cWORKER_SECRET>'","code-10":"{\n  \"workers\": [\n    {\n      \"id\": \"w2-c-6af6b9ae-140d72b5-5aff54cafef5\",\n      \"worker_id\": \"w2-c-6af6b9ae-140d72b5-5aff54cafef5\",\n      \"status\": \"online\",\n      \"connected_at\": 1794558913028,\n      \"last_heartbeat\": 1794558958030,\n      \"inflight\": 0,\n      \"total_jobs\": 2,\n      \"capabilities\": {\n        \"worker_id\": \"w2-…\",\n        \"tenant_id\": \"default\",\n        \"models\": [\"glm-5.3\"],\n        \"concurrency\": 2,\n        \"protocol_version\": 1\n      }\n    }\n  ],\n  \"uptime_seconds\": 76,\n  \"total_jobs_all_time\": 2\n}","code-11":"curl -s '{HUB}/internal/worker-token?XTransformPort=3003' \\\n  -H 'X-Worker-Secret: \u003cWORKER_SECRET>'\n\n{ \"token\": \"\u003cpayload>.\u003csig>\", \"tenant_id\": \"default\", \"ttl_seconds\": 60, \"expires_at\": 1794558972000 }"};
+  var input = document.getElementById('hub-base-input');
+  function fill(){
+    var base = (input && input.value ? input.value : '').replace(/\/+$/,'');
+    var shown = base || 'https://<hub-host>';
+    Object.keys(ORIGS).forEach(function(k){
+      var el = document.getElementById(k);
+      if (el && ORIGS[k].indexOf('{HUB}') !== -1) el.textContent = ORIGS[k].replaceAll('{HUB}', shown);
+    });
+    var slots = document.querySelectorAll('.bubv');
+    slots.forEach(function(s){ s.textContent = shown; });
+  }
+  if (input) input.addEventListener('input', fill);
+  fill();
+
+  // 2) copy buttons
+  document.addEventListener('click', function(ev){
+    var btn = ev.target.closest ? ev.target.closest('.copybtn') : null;
+    if (!btn) return;
+    var el = document.getElementById(btn.getAttribute('data-target'));
+    if (!el) return;
+    var text = el.textContent;
+    function done(){ btn.classList.add('done'); btn.textContent='copied'; setTimeout(function(){ btn.classList.remove('done'); btn.textContent='copy'; }, 1500); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+    function fallback(){
+      var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(e){} ta.remove(); done();
+    }
+  });
+
+  // 3) scroll spy
+  var links = Array.prototype.slice.call(document.querySelectorAll('.slink, .chip'));
+  var sections = Array.prototype.slice.call(document.querySelectorAll('.ds'));
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (!en.isIntersecting) return;
+        var id = en.target.id;
+        links.forEach(function(l){
+          var on = l.getAttribute('href') === '#' + id;
+          l.classList.toggle('active', on);
+        });
+      });
+    }, { rootMargin: '-70px 0px -60% 0px', threshold: 0 });
+    sections.forEach(function(s){ io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
