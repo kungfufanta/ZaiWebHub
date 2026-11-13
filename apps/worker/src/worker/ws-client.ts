@@ -24,7 +24,7 @@ const BASE_BACKOFF_MS = 1_000;
 // Backpressure BẮT BUỘC (PLAN T2-b): > 1MB → tạm dừng đọc adapter stream tới khi < 256KB.
 const BUFFERED_HIGH_WATER = 1_048_576; // 1MB
 const BUFFERED_LOW_WATER = 262_144; // 256KB
-// ws readyState constant (WebSocket.OPEN) — dùng literal để tránh chạm value import 'ws' lúc compile edge.
+// ws readyState constant (WS_OPEN) — dùng literal để tránh chạm value import 'ws' lúc compile edge.
 const WS_OPEN = 1;
 
 // Constructor của ws được load lazy (edge-safe). Instance type lấy từ `import type WebSocket from 'ws'`.
@@ -48,6 +48,13 @@ export interface WorkerState {
   inflight: Map<string, JobHandle>;
   heartbeatTimer: NodeJS.Timeout | null;
   stopping: boolean;
+  // --- Task 3.6-W: runtime start/stop + số liệu cho status UI ---
+  running: boolean;
+  phase: 'connecting' | 'registering' | 'online' | 'reconnecting' | 'stopped';
+  totalJobs: number;
+  lastHeartbeatAt: number | null;
+  lastError: string | null;
+  startedSource: string;
 }
 
 type WorkerGlobal = typeof globalThis & {
@@ -68,6 +75,12 @@ function getState(): WorkerState {
       inflight: new Map<string, JobHandle>(),
       heartbeatTimer: null,
       stopping: false,
+      running: false,
+      phase: 'stopped',
+      totalJobs: 0,
+      lastHeartbeatAt: null,
+      lastError: null,
+      startedSource: '',
     };
   }
   return g.__zaiwebhubWorkerState;
@@ -105,28 +118,133 @@ export function getWorkerStatus(): {
   };
 }
 
-export function startWorker(): void {
-  if (g.__zaiwebhubWorkerStarted) {
-    log('warn', 'startWorker() called again — already started (global flag guards double boot)', {
-      worker_id: getState().config.workerId,
+/**
+ * Task 3.6-W — thông tin mở rộng cho /api/status + status UI (KHÔNG đụng shape của /api/health).
+ * KHÔNG bao giờ trả worker_secret qua đây (secret không bao giờ rời server).
+ */
+export function getRuntimeInfo(): {
+  running: boolean;
+  phase: WorkerState['phase'];
+  worker_id: string;
+  hub_url_ws: string;
+  connected: boolean;
+  registered: boolean;
+  inflight: number;
+  total_jobs: number;
+  attempt: number;
+  uptime_s: number;
+  last_heartbeat: number | null;
+  last_error: string | null;
+  upstream: string;
+  mode: string;
+} {
+  const s = getState();
+  const connected = s.connected && !!s.ws && s.ws.readyState === WS_OPEN;
+  const phase: WorkerState['phase'] = s.running
+    ? connected && s.registered
+      ? 'online'
+      : s.attempt > 0
+        ? 'reconnecting'
+        : s.ws
+          ? 'registering'
+          : 'connecting'
+    : 'stopped';
+  return {
+    running: s.running,
+    phase,
+    worker_id: s.config.workerId,
+    hub_url_ws: s.config.hubUrl,
+    connected,
+    registered: s.registered,
+    inflight: s.inflight.size,
+    total_jobs: s.totalJobs,
+    attempt: s.attempt,
+    uptime_s: Math.round((Date.now() - s.bootedAt) / 1000),
+    last_heartbeat: s.lastHeartbeatAt,
+    last_error: s.lastError,
+    upstream: s.config.upstream,
+    mode: s.config.mode,
+  };
+}
+
+function sameRuntimeConfig(a: WorkerConfig, b: WorkerConfig): boolean {
+  return (
+    a.hubUrl === b.hubUrl &&
+    a.hubTokenUrl === b.hubTokenUrl &&
+    a.workerId === b.workerId &&
+    a.workerSecret === b.workerSecret
+  );
+}
+
+/**
+ * Task 3.6-W — start runtime WS (singleton). Có thể gọi từ instrumentation boot HOẶC POST /api/setup.
+ * - Đang chạy + cùng config → no-op (chống double connect).
+ * - Đang chạy + khác config → stop sạch rồi start lại với config mới.
+ */
+export function startRuntime(config: WorkerConfig, source = 'boot'): void {
+  const cur = g.__zaiwebhubWorkerState;
+  if (g.__zaiwebhubWorkerStarted && cur && cur.running && !cur.stopping) {
+    if (sameRuntimeConfig(cur.config, config)) {
+      log('info', 'startRuntime ignored — already running with same config (singleton guard)', {
+        worker_id: config.workerId,
+      });
+      return;
+    }
+    log('info', 'startRuntime — config changed, stopping current runtime first', {
+      worker_id: cur.config.workerId,
     });
-    return;
+    stopRuntime();
   }
+  g.__zaiwebhubWorkerState = {
+    config,
+    ws: null,
+    connected: false,
+    registered: false,
+    bootedAt: Date.now(),
+    attempt: 0,
+    inflight: new Map<string, JobHandle>(),
+    heartbeatTimer: null,
+    stopping: false,
+    running: true,
+    phase: 'connecting',
+    totalJobs: 0,
+    lastHeartbeatAt: null,
+    lastError: null,
+    startedSource: source,
+  };
   g.__zaiwebhubWorkerStarted = true;
-  const state = getState();
-  log('info', 'worker booting — WS outbound client starting', {
+  const state = g.__zaiwebhubWorkerState;
+  log('info', 'worker runtime starting', {
     worker_id: state.config.workerId,
     hub_url: state.config.hubUrl,
-    hub_http_base: state.config.hubHttpBase,
     hub_token_url: state.config.hubTokenUrl || '(derive từ hubHttpBase)',
     worker_secret_set: state.config.workerSecret.length > 0,
     tenant_id: state.config.tenantId,
     mode: state.config.mode,
     upstream: state.config.upstream,
     concurrency: state.config.concurrency,
+    source,
     protocol_version: PROTOCOL_VERSION,
   });
   void connectLoop(state);
+}
+
+/** Task 3.6-W — stop runtime (POST /api/disconnect): đóng WS, drop in-flight, KHÔNG kill process. */
+export function stopRuntime(): void {
+  const s = g.__zaiwebhubWorkerState;
+  g.__zaiwebhubWorkerStarted = false;
+  if (!s) return;
+  s.stopping = true;
+  s.running = false;
+  s.phase = 'stopped';
+  stopHeartbeat(s);
+  dropInflight(s, 'runtime stopped (disconnect/re-configure)');
+  try {
+    s.ws?.close();
+  } catch {
+    // bỏ qua
+  }
+  log('info', 'worker runtime stopped', { worker_id: s.config.workerId });
 }
 
 function backoffDelayMs(attempt: number): number {
@@ -148,12 +266,14 @@ async function connectLoop(state: WorkerState): Promise<void> {
     if (state.stopping) break;
     const delay = backoffDelayMs(state.attempt);
     state.attempt += 1;
+    state.phase = 'reconnecting';
     log('warn', `WS not connected — retry in ${delay}ms`, {
       worker_id: state.config.workerId,
       attempt: state.attempt,
       hub_url: state.config.hubUrl,
     });
     await sleep(delay);
+    if (state.stopping) break; // stop có thể xảy ra trong lúc sleep — kiểm tra lại trước khi connect
   }
 }
 
@@ -195,15 +315,18 @@ async function connectOnce(state: WorkerState): Promise<void> {
     ws.on('open', () => {
       state.connected = true;
       state.attempt = 0; // kết nối thành công → reset backoff
+      state.phase = 'registering';
+      state.lastError = null;
       log('info', 'WS connected — fetching short-lived worker token', {
         worker_id: state.config.workerId,
         hub_url: state.config.hubUrl,
       });
       fetchToken(state)
         .then((token) => {
-          if (state.ws !== ws || ws.readyState !== WebSocket.OPEN) return; // socket cũ/stale
+          if (state.ws !== ws || ws.readyState !== WS_OPEN) return; // socket cũ/stale
           sendRegister(state, ws, token);
           state.registered = true;
+          state.phase = 'online';
           startHeartbeat(state);
           log('info', 'worker.register sent', {
             worker_id: state.config.workerId,
@@ -214,7 +337,8 @@ async function connectOnce(state: WorkerState): Promise<void> {
           });
         })
         .catch((err) => {
-          // 404 / ECONNREFUSED (hub chưa lên) → đóng sạch, vòng lặp ngoài sẽ retry backoff.
+          // 401 (sai secret) / 404 / ECONNREFUSED → đóng sạch, vòng lặp ngoài sẽ retry backoff.
+          state.lastError = errMsg(err);
           log('error', 'worker token fetch failed — closing socket to retry', {
             worker_id: state.config.workerId,
             error: errMsg(err),
@@ -240,6 +364,7 @@ async function connectOnce(state: WorkerState): Promise<void> {
 
     ws.on('error', (err) => {
       // Ví dụ: "connect ECONNREFUSED 127.0.0.1:3003" khi hub chưa chạy — KHÔNG crash, 'close' sẽ theo sau.
+      state.lastError = errMsg(err);
       log('warn', `WS error: ${errMsg(err)}`, {
         worker_id: state.config.workerId,
         hub_url: state.config.hubUrl,
@@ -398,10 +523,11 @@ function onJobDispatch(state: WorkerState, ws: WebSocket, job: JobPayload): void
   const io: JobIo = {
     sendControl: (frame) => sendControl(state, ws, frame),
     sendBinary: (payload) => sendBinaryWithBackpressure(state, ws, payload),
-    isOpen: () => ws.readyState === WebSocket.OPEN,
+    isOpen: () => ws.readyState === WS_OPEN,
   };
   const handle = startJob(job, io);
   state.inflight.set(job.job_id, handle);
+  state.totalJobs += 1;
   void handle.done.then(() => {
     state.inflight.delete(job.job_id);
   });
@@ -457,10 +583,10 @@ async function sendBinaryWithBackpressure(
   payload: Uint8Array,
 ): Promise<boolean> {
   const logCtx = { worker_id: state.config.workerId };
-  if (ws.readyState !== WebSocket.OPEN) return false;
+  if (ws.readyState !== WS_OPEN) return false;
   if (ws.bufferedAmount > BUFFERED_HIGH_WATER) {
     let waitedMs = 0;
-    while (ws.readyState === WebSocket.OPEN && ws.bufferedAmount >= BUFFERED_LOW_WATER) {
+    while (ws.readyState === WS_OPEN && ws.bufferedAmount >= BUFFERED_LOW_WATER) {
       await sleep(50);
       waitedMs += 50;
     }
@@ -470,7 +596,7 @@ async function sendBinaryWithBackpressure(
         buffered_before: BUFFERED_HIGH_WATER,
       });
     }
-    if (ws.readyState !== WebSocket.OPEN) return false;
+    if (ws.readyState !== WS_OPEN) return false;
   }
   try {
     // Zero-copy view sang Buffer (bytes KHÔNG đổi — F4).
@@ -484,9 +610,11 @@ async function sendBinaryWithBackpressure(
 
 function startHeartbeat(state: WorkerState): void {
   stopHeartbeat(state);
+  state.lastHeartbeatAt = Date.now();
   state.heartbeatTimer = setInterval(() => {
     const ws = state.ws;
     if (!ws || ws.readyState !== WS_OPEN) return;
+    state.lastHeartbeatAt = Date.now();
     sendControl(state, ws, {
       type: 'worker.heartbeat',
       ts: Date.now(),

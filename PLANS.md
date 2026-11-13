@@ -127,6 +127,7 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 | T3.5-c | ops | Multi-sandbox Loops 1–5 (reachability, register, E2E phân bổ W1/W2, failure drill, load) | T3.5-a, T3.5-b | Checklist COORDINATION.md đủ | in-progress |
 | T3.5-d | dev-console | Console cross-sandbox: `WEBHUB_ORIGIN`/`WEBHUB_QUERY` + `NEXT_PUBLIC_WEBHUB_URL`/`NEXT_PUBLIC_WEBHUB_QUERY` + CORS hub `/v1/*` | T3-c | Console sandbox khác chạy WebHub mode | **done** |
 | T3.5-e | ops | Owner switchover: dùng UI thật, scale worker, (tùy chốt) dọn đường VPS | T3.5-c | Owner xác nhận "hub dùng được" | todo |
+| T3.6-W | apps/worker | Worker Next.js UI tại :3000 — setup/status form, config `.worker-config.json` (env vẫn override cho headless), runtime start/stop singleton, strict port, `/api/health` giữ nguyên | T3.5-b | Verify a–h bằng browser PASS; docs runbook viết lại | **done (W1 sandbox verified)** |
 
 ### Decision gates
 - **G1 — transport**: **PASS (T0-b)** → WS confirmed.
@@ -289,3 +290,16 @@ Protocol package (T1-a-1) implement trực tiếp bởi agent phiên này TRƯ�
 **Chia việc Đợt 3.5 (docs/deploy/):** README (sự thật sandbox + topology + loops 1–5), 10-hub-sandbox.md (3.5-H), 20-worker-sandbox.md (3.5-W1/W2), 30-console-sandbox.md (3.5-C), COORDINATION.md (bảng status + nhật ký append-only qua git). Owner cần: (1) lấy public URL hub sandbox từ preview panel; (2) cấp `WORKER_SECRET` cho agent W qua chat; (3) paste bootstrap cho từng agent.
 
 **Còn mở:** Loop 1–5 với worker remote thật; T3.5-e switchover; blocker production không đổi (key Z.AI thật cho `UPSTREAM=real`).
+
+### [v8] Task 3.6-W — Worker UI tại :3000 (setup + status), W1 sandbox (2026-11-13)
+
+**Thay đổi apps/worker (KHÔNG đụng webhub/dev-console/packages):**
+1. Port :3004 → **:3000** — strict port qua `scripts/dev-strict.mjs` (bận → FATAL rõ ràng, không tự đổi port như next dev mặc định).
+2. **Config persistence**: `.worker-config.json` (gitignored, mode 0600) `{hub_url, worker_id, worker_secret}`; boot resolution env (3 biến) > file > null (null → SETUP UI, không start WS). Env vẫn hỗ trợ headless (hub sandbox worker nội bộ :3004 kiểu này).
+3. **Runtime start/stop singleton** (`ws-client.ts`): `startRuntime(config)/stopRuntime()` thay `startWorker()`; thêm phase/total_jobs/last_heartbeat/last_error; chống double-connect + stop-during-sleep fix. `/api/health` GIỮ NGUYÊN shape.
+4. **API mới**: `POST /api/setup` (validate + ghi file + start), `GET /api/status` (có tail worker.log 100 dòng, fallback ring buffer), `POST /api/disconnect` (stop + xoá file). Secret không bao giờ trả về client.
+5. **UI** (Tailwind 4): setup form (pre-fill worker_id = hostname, secret masked, progress "Registering with hub...") / status dashboard (8 cards, poll 3s, Disconnect/Re-configure, log tail).
+
+**Verify a–h bằng agent-browser (W1 sandbox, hub thật):** a PASS (setup form khi chưa config) · b PASS (paste URL+secret → Online/registered) · c+d PASS (3 chat đồng thời: least-loaded dồn 2 job về local-w1, job `124c7c60` về W1 — TTFB 450ms, 3 events, đúng 1 `[DONE]`, finish stop) · e PASS (total_jobs 0→1 trên dashboard) · f PASS (disconnect → file xoá → setup form) · g PASS (reconnect OK) · h PASS (restart process → config bền, WS tự reconnect).
+
+**Finding cho owner:** console hub sandbox (a) chưa có tab Workers — hint "lấy URL từ tab Workers" chưa dùng được, người dùng paste URL hub + query gateway thủ công; (b) console chưa hydrate qua headless automation (RSC flight=0) — verify bằng đúng HTTP request WebHub mode phát ra (same-origin + Bearer dev key). Không thuộc phạm vi 3.6-W (console riêng).

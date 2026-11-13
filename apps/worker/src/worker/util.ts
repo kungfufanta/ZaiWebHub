@@ -4,6 +4,15 @@
 
 export type LogLevel = 'info' | 'warn' | 'error';
 
+// Task 3.6-W — in-memory ring buffer cho log tail trên status UI (fallback khi không đọc được worker.log).
+// Edge-safe: chỉ dùng globalThis, không node builtins.
+const LOG_RING_MAX = 300;
+type LogRingGlobal = typeof globalThis & { __zaiwebhubLogRing?: string[] };
+
+export function getLogRing(): string[] {
+  return (globalThis as LogRingGlobal).__zaiwebhubLogRing ?? [];
+}
+
 export function log(level: LogLevel, msg: string, ctx?: Record<string, unknown>): void {
   const parts = ['[worker]', `[${level}]`, msg];
   if (ctx && Object.keys(ctx).length > 0) {
@@ -13,7 +22,14 @@ export function log(level: LogLevel, msg: string, ctx?: Record<string, unknown>)
       parts.push('(ctx unserializable)');
     }
   }
-  console.log(parts.join(' '));
+  const line = parts.join(' ');
+  console.log(line);
+  const g = globalThis as LogRingGlobal;
+  if (!g.__zaiwebhubLogRing) g.__zaiwebhubLogRing = [];
+  g.__zaiwebhubLogRing.push(`${new Date().toISOString()} ${line}`);
+  if (g.__zaiwebhubLogRing.length > LOG_RING_MAX) {
+    g.__zaiwebhubLogRing.splice(0, g.__zaiwebhubLogRing.length - LOG_RING_MAX);
+  }
 }
 
 export function sleep(ms: number): Promise<void> {
