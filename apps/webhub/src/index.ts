@@ -21,6 +21,8 @@ import {
 } from './auth.js';
 import { createChatRouter } from './api/chat.js';
 import { log } from './logger.js';
+import { HubStats } from './internal/stats.js';
+import { createInternalWorkersRouter } from './internal/workers.js';
 
 const PORT = Number(process.env.PORT ?? 3003);
 const MAX_TOKEN_TTL_SECONDS = 300;
@@ -30,11 +32,22 @@ const store = new MemoryStateStore();
 
 // Hub hooks cần dispatcher, dispatcher cần hub → dispatcher khai báo bằng closure (deferred)
 let dispatcher: Dispatcher;
+// 3.6-H: bộ đếm quan sát cho GET /internal/workers — feed từ 3 hook có sẵn, KHÔNG đổi hành vi.
+const stats = new HubStats();
 const hub = new WorkerHub({
-  onWorkerRegistered: (entry: WorkerEntry) => dispatcher.onWorkerRegistered(entry),
-  onWorkerRemoved: (entry: WorkerEntry) => dispatcher.onWorkerRemoved(entry),
+  onWorkerRegistered: (entry: WorkerEntry) => {
+    stats.noteWorkerRegistered(entry);
+    dispatcher.onWorkerRegistered(entry);
+  },
+  onWorkerRemoved: (entry: WorkerEntry) => {
+    stats.noteWorkerRemoved(entry);
+    dispatcher.onWorkerRemoved(entry);
+  },
   onHeartbeat: (entry: WorkerEntry, inflight: number) => dispatcher.onHeartbeat(entry, inflight),
-  onAck: (workerId: string, jobId: string) => dispatcher.onAck(workerId, jobId),
+  onAck: (workerId: string, jobId: string) => {
+    stats.noteJobAck(workerId, jobId);
+    dispatcher.onAck(workerId, jobId);
+  },
   onChunk: (workerId: string, jobId: string, seq: number, payload: Uint8Array) =>
     dispatcher.onChunk(workerId, jobId, seq, payload),
   onDone: (workerId: string, jobId: string, finishReason: string, usage, upstreamDoneRelayed) =>
@@ -93,6 +106,9 @@ app.use('/v1/*', async (c, next) => {
 });
 
 app.route('/', createChatRouter({ dispatcher, store }));
+
+// 3.6-H: endpoint MỚI read-only cho Hub UI — auth X-Worker-Secret, không đụng route hiện có.
+app.route('/', createInternalWorkersRouter({ hub, stats }));
 
 // Route khác → 404 (mặc định Hono) — log để trace
 app.notFound((c) => c.json({ error: { message: 'not found' } }, 404));

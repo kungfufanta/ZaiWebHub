@@ -40,6 +40,15 @@ bun run scripts/build-compat.ts
 2. Nhận stream: nội dung trả lời, badge `no-reasoning (proxy)`, job_id hiển thị, đúng 1 `[DONE]`.
 3. Ghi COORDINATION.md: TTFB, số event, worker nào nhận job (hub log), commit `docs(coord): C loop3 PASS`.
 
+## Onboard worker mới (3.6-H — làm trên Hub UI)
+
+1. Owner mở public URL sandbox hub `:3000` → nav **Workers**.
+2. Trong box **Worker Connection Info**: paste **HUB PUBLIC BASE URL** (public URL của sandbox hub, vd `https://<hub-host>`) → UI sinh URL dạng:
+   `{HUB_PUBLIC_BASE}/internal/worker-token?XTransformPort=3003`
+3. Bấm **Copy URL**.
+4. Mở worker sandbox → `:3000` → paste URL này + secret (`WORKER_SECRET` do owner cấp qua chat) vào form setup của worker.
+5. Tab Workers poll 5s — worker mới hiện badge **online** kèm inflight/total_jobs/heartbeat; tab **Stats** thấy số jobs tăng.
+
 ## Điểm chú ý UI
 
 - Panel thinking TỰ ĐỘNG: chỉ hiện khi stream có `delta.reasoning_content` — proxy sandbox luôn strip →

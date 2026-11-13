@@ -16,6 +16,11 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // 3.6-H: cho phép dev resource (HMR websocket, font dev) từ các host truy cập console.
+  // - 127.0.0.1 / localhost: truy cập trực tiếp trong sandbox (agent-browser, curl).
+  // - *.space-z.ai: public URL preview của sandbox (owner mở qua gateway — Host giữ nguyên domain).
+  // Không có mục này, Next 16 chặn /_next/hmr + font dev → hydration bị stall trên host lạ.
+  allowedDevOrigins: ["127.0.0.1", "localhost", "*.space-z.ai"],
   // WebHub mode (T4-a): client luôn fetch `/v1/chat/completions?XTransformPort=3003`.
   // - Khi chạy QUA GATEWAY sandbox: gateway thấy XTransformPort=3003 → forward thẳng webhub (rewrite không chạy).
   // - Khi truy cập TRỰC TIẾP dev-console (local/agent-browser, không qua gateway): rewrite dưới đây

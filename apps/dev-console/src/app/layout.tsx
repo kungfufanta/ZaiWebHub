@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { HubNav } from "@/components/hub-nav";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ZaiWebHub dev-console — MOCK mode",
+  title: "ZaiWebHub Hub UI — console · workers · stats",
   description:
     "Bảng điều khiển dev kiểm tra luồng SSE thinking → answer bằng endpoint mock (/api/mock-chat), phát đúng wire contract của packages/protocol.",
   keywords: ["ZaiWebHub", "dev-console", "SSE", "mock", "thinking mode", "Next.js", "protocol"],
@@ -40,6 +41,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        <HubNav />
         {children}
         <Toaster />
       </body>

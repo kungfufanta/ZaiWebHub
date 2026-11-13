@@ -52,6 +52,20 @@ Hub log phải có `worker registered worker_id=local-w1`.
 - Yêu cầu owner (hoặc tự dùng agent-browser nếu có) mở `https://<hub-host>/healthz?XTransformPort=3003` → phải JSON `ok:true`. Đây là bằng chứng path công cộng sống.
 - Ghi vào `docs/deploy/COORDINATION.md` dòng HUB (URL + trạng thái), commit `docs(coord): HUB live <url>`, `git pull --rebase && git push`.
 
+## Bước 5b — Sau khi hub live: Hub UI tại :3000 (3.6-H)
+
+Console ở `:3000` là **Hub UI đầy đủ** (nav 3 tab, giữ nguyên chat preview):
+
+| Tab | Nội dung |
+|---|---|
+| `/` | Console chat preview — 3 mode Mock / Adapter / WebHub (giữ nguyên) |
+| `/workers` | Workers management — table từ webhub `GET /internal/workers` (auth `X-Worker-Secret`, poll 5s) + box **Worker Connection Info** sinh URL onboard worker |
+| `/stats` | Stats overview — uptime, workers online, total jobs, jobs-per-worker (CSS bar) |
+
+- Console lấy dữ liệu qua server-side proxy `/api/workers` → `HUB_INTERNAL_URL` (mặc định `http://127.0.0.1:3003`) kèm `WORKER_SECRET` từ env — **secret không bao giờ xuống client**.
+- Console cần env `WORKER_SECRET` + `HUB_INTERNAL_URL` trong `.env.local` (gitignored, KHÔNG commit).
+- `next.config.ts` đã có `allowedDevOrigins` (127.0.0.1 / localhost / *.space-z.ai) — thiếu nó, Next 16 chặn dev resource và hydration stall.
+
 ## Bước 6 — Nhận worker remote (Loop 2)
 
 Khi W1/W2 report đã start: kiểm tra hub.log có `worker registered worker_id=w1-…` / `w2-…`.
