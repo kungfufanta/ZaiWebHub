@@ -3,18 +3,29 @@
 Worker chạy trong sandbox Z.AI (ephemeral, KHÔNG có inbound). Chỉ chủ động mở WS outbound ra hub và giữ kết nối.
 Cùng codebase này chạy `MODE=relay` làm proxy fallback (T4-d) — KHÔNG tạo service thứ 3 riêng.
 
+## Quyết định D1 (chốt bởi chủ dự án — không bàn lại)
+- **Worker là Next.js app (Node runtime), KHÔNG dùng Bun.** Lý do: sandbox thường đã có Next.js sẵn, deploy prod ổn định; Bun thiếu nhiều dịch vụ và rủi ro không cần thiết.
+- WS client outbound là tiến trình DÀI HẠN — KHÔNG chạy trong request handler. Boot 1 lần lúc start qua `src/instrumentation.ts` → `register()` với guard `process.env.NEXT_RUNTIME === 'nodejs'`, import động module client để không chặn build. Route handler chỉ giữ `GET /api/health` làm health check.
+- **Proxy fallback (T4-d) = cùng codebase worker này, chỉ khác `MODE=relay`.**
+
+## Worker STATELESS (bắt buộc)
+- KHÔNG giữ `reasoning_content` (hoặc bất kỳ state hội thoại nào) giữa các job trong RAM/disk của worker.
+- Mọi state đi qua WebHub: hub gắn `reasoning_blocks` + history vào `JobPayload` trước khi dispatch (D2/D3 — xem `apps/webhub/PLAN.md` T3-d/T3-f).
+- Worker chỉ nhận job → gọi adapter → stream chunk → quên hết.
+
 ## Cấu hình env
 ```
 HUB_URL=ws://localhost:3003/worker   # dev trong sandbox; prod: wss://hub.example.com/worker
-WORKER_TOKEN=...                     # auth khi register (phải khớp env của hub)
+WORKER_TOKEN=...                     # short-lived token do hub cấp (T3-f): TTL ~60s, gắn tenant_id + capabilities
+TENANT_ID=default                    # D3: worker gắn tenant
 MODE=worker | relay                  # mặc định worker
-PORT=3004                            # http health check (GET /healthz)
+PORT=3004                            # http health check (GET /api/health)
 WORKER_ID=...                        # mặc định: uuid + hostname
 ```
 
 ## Vòng đời (MODE=worker)
-1. boot → mở WS tới `HUB_URL`.
-2. gửi `worker.register` `{ capabilities: { worker_id, models: ['glm-5.3'], concurrency, protocol_version, version }, token }`.
+1. boot (instrumentation.ts) → mở WS tới `HUB_URL`.
+2. gửi `worker.register` `{ capabilities: { worker_id, tenant_id, models: ['glm-5.3'], concurrency, protocol_version, version }, token }`.
 3. heartbeat mỗi 15s (`worker.heartbeat` kèm `inflight`).
 4. nhận `job.dispatch` → trả `job.ack` NGAY → chạy `streamChat()` của zai-adapter → từng AdapterEvent đổi thành `job.chunk` (seq tăng dần) → kết thúc `job.done` | `job.error`.
 5. nhận `job.cancel` → `AbortController.abort()` → dừng zsdk → `job.error{ type: 'cancelled' }` → nhận job mới.
@@ -31,6 +42,8 @@ WORKER_ID=...                        # mặc định: uuid + hostname
 ## Lệnh cấm
 - Worker KHÔNG được import `z-ai-web-dev-sdk` trực tiếp — chỉ zai-adapter được gọi zsdk.
 - Worker KHÔNG tự lưu state hội thoại — stateless tuyệt đối (state nằm ở WebHub, xem T3-d).
+- Worker KHÔNG được ghi API key Z.AI xuống disk/env dài hạn — nhận short-lived token qua job handshake nếu cơ chế đó được bật (T3-f).
+- KHÔNG dùng Bun runtime (D1). Bun chỉ được dùng làm package manager.
 
 ## DoD
 ### T2-a — WS client

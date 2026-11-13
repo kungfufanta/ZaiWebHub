@@ -35,4 +35,4 @@ Chat UI CÓ BỘ NHỚ hội thoại, dùng để kiểm chứng dòng stream pr
 - CẤM ghi port/địa chỉ tuyệt đối trong URL (kể cả WebSocket từ browser).
 
 ## Nhật ký thực thi (agent ghi vào đây)
-- (chưa có)
+- [T1-c-mock] Đã dựng apps/dev-console hoàn chỉnh ở chế độ MOCK (chưa ghép adapter/hub): UI chat + bộ nhớ phiên copy từ prototype my-project; thêm route `POST /api/mock-chat` phát SSE đúng bảng contract của packages/protocol (`thinking_start → thinking_delta* → answer_start → answer chunks OpenAI-format → finish → [DONE]`), nhánh `error_test` và abort/stop qua AbortController; endpoint client mặc định `/api/mock-chat`, ghi đè được bằng `NEXT_PUBLIC_CHAT_ENDPOINT` (chuẩn bị sẵn cho T4-a). Chi tiết đầy đủ: `agent-ctx/T1-c-mock-coder.md`.
