@@ -6,6 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SAMPLE_PROMPTS } from '@/lib/chat-utils';
+import type { EndpointMode } from '@/lib/endpoints';
 
 interface ComposerProps {
   value: string;
@@ -15,7 +16,9 @@ interface ComposerProps {
   streaming: boolean;
   historyCount: number;
   empty: boolean;
-  /** Khi bật: lượt gửi kế tiếp kèm error_test=true để mock endpoint phát event:error. */
+  /** Chế độ endpoint — error_test chỉ áp dụng cho mock. */
+  mode: EndpointMode;
+  /** Khi bật (mode mock): lượt gửi kế tiếp kèm error_test=true → event:error giữa stream. */
   errorTest: boolean;
   onErrorTestChange: (value: boolean) => void;
 }
@@ -28,6 +31,7 @@ export function Composer({
   streaming,
   historyCount,
   empty,
+  mode,
   errorTest,
   onErrorTestChange,
 }: ComposerProps) {
@@ -82,25 +86,31 @@ export function Composer({
         )}
       </div>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="error-test-toggle"
-            checked={errorTest}
-            onCheckedChange={(checked) => onErrorTestChange(checked === true)}
-            className="h-3.5 w-3.5"
-            aria-label="Bật mock lỗi stream (error_test) cho lượt gửi kế tiếp"
-          />
-          <Label
-            htmlFor="error-test-toggle"
-            className="cursor-pointer text-[11px] font-normal text-muted-foreground"
-          >
-            Mock lỗi stream (error_test)
-          </Label>
-        </div>
-        {errorTest && (
+        {mode === 'mock' ? (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="error-test-toggle"
+              checked={errorTest}
+              onCheckedChange={(checked) => onErrorTestChange(checked === true)}
+              className="h-3.5 w-3.5"
+              aria-label="Bật mock lỗi stream (error_test) cho lượt gửi kế tiếp"
+            />
+            <Label
+              htmlFor="error-test-toggle"
+              className="cursor-pointer text-[11px] font-normal text-muted-foreground"
+            >
+              Mock lỗi stream (error_test)
+            </Label>
+          </div>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">
+            error_test chỉ khả dụng ở chế độ Mock.
+          </span>
+        )}
+        {mode === 'mock' && errorTest && (
           <span className="flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400">
             <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
-            Lượt gửi kế tiếp sẽ nhận event:error sau 2 thinking_delta
+            Lượt gửi kế tiếp sẽ nhận event:error sau 2 chunk suy luận
           </span>
         )}
       </div>

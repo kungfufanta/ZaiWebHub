@@ -4,27 +4,28 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/mock-chat — MOCK SSE emitter cho ZaiWebHub dev-console (T1-c).
+ * POST /api/mock-chat — MOCK SSE emitter cho ZaiWebHub dev-console (T1-c, wire MỚI).
  *
- * Giả lập đúng wire contract của packages/protocol (bảng ánh xạ job.chunk → SSE):
- *   thinking chunk ĐẦU TIÊN  -> `event: thinking_start` + `data: {"message":"Thinking..."}`
- *   thinking chunk tiếp theo -> `event: thinking_delta` + `data: {"delta":"..."}`
- *   answer chunk ĐẦU TIÊN    -> `event: answer_start` + `data: {"message":"Answer:"}`
- *   answer chunk tiếp theo   -> `data: {"choices":[{"delta":{"content":"..."},"index":0,"finish_reason":null}]}`
- *   finish                   -> `event: finish` + `data: {"reason":"stop"}`
- *   error (bất cứ đâu)       -> `event: error` + `data: {"error":{"message":"...","type":"upstream_error"}}`
- *   kết thúc                 -> `data: [DONE]`
+ * ⚠️ Wire = UPSTREAM-NATIVE SSE (contract F4 — packages/protocol/PLAN.md):
+ * KHÔNG còn custom events `thinking_start/thinking_delta/answer_start/finish`
+ * (DEPRECATED khỏi wire công khai từ Đợt 2). Thay vào đó:
  *
- * Body: { messages: [{ role, content }], model?, thinking?, error_test? }.
- * error_test=true: sau ~2 thinking_delta phát `event: error` rồi `[DONE]`, đóng stream sạch.
+ *   chunk suy luận  -> `data: {"id","object":"chat.completion.chunk","model","choices":[{"index":0,"delta":{"reasoning_content":"..."}}]}`
+ *   chunk trả lời   -> `data: {...,"choices":[{"index":0,"delta":{"role":"assistant","content":"..."}}]}`
+ *   chunk cuối      -> `data: {...,"choices":[{"index":0,"finish_reason":"stop","delta":{"role":"assistant","content":""}}],"usage":{"prompt_tokens":N,"completion_tokens":M,"total_tokens":N+M}}`
+ *   lỗi (error_test)-> `event: error` + `data: {"error":{"message":"...","type":"upstream_error"}}` rồi `[DONE]`
+ *   kết thúc        -> `data: [DONE]`
+ *
+ * Client (dev-console) tự tách thinking bằng `delta.reasoning_content` (F7 — panel tự hiện).
+ * Mọi tuyên bố "thinking works" qua route này chỉ đạt nhãn `mock-verified` (G2-4: proxy
+ * sandbox KHÔNG BAO GIỜ emit reasoning_content thật).
+ *
+ * Body: { messages: [{ role, content }], model?, thinking? (bool | {type}), error_test? }.
  * Request.signal abort: ngừng phát, đóng stream, KHÔNG ném lỗi ra log.
  */
 
-const DEFAULT_MODEL = 'glm-5.3';
+const DEFAULT_MODEL = 'glm-4-plus'; // khớp hành vi proxy sandbox (G2-3: mọi model đều được phục vụ là glm-4-plus)
 const ALLOWED_ROLES = new Set(['system', 'user', 'assistant']);
-const HEARTBEAT_INTERVAL_MS = 15000;
-
-// Nhịp phát theo spec: thinking 60-120ms/chunk (tổng ~6-10s), answer 40-80ms/chunk (tổng ~4-6s).
 const THINKING_CHUNK_MIN_MS = 60;
 const THINKING_CHUNK_MAX_MS = 120;
 const ANSWER_CHUNK_MIN_MS = 40;
@@ -57,9 +58,15 @@ function sanitizeMessages(raw: unknown): SanitizedMessage[] | null {
   return out.length > 0 ? out : null;
 }
 
-function encodeSse(name: string | null, payload: unknown): string {
-  const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  return name ? `event: ${name}\ndata: ${data}\n\n` : `data: ${data}\n\n`;
+/** Chấp nhận cả `thinking: boolean` (cũ) lẫn `thinking: {type:'enabled'|'disabled'}` (mới). */
+function parseThinkingEnabled(raw: unknown): boolean {
+  if (typeof raw === 'boolean') return raw;
+  if (raw && typeof raw === 'object') {
+    const type = (raw as { type?: unknown }).type;
+    if (type === 'disabled') return false;
+    if (type === 'enabled') return true;
+  }
+  return true; // mặc định bật — khớp default của adapter
 }
 
 function truncateForQuote(text: string, max: number): string {
@@ -67,10 +74,7 @@ function truncateForQuote(text: string, max: number): string {
   return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}...`;
 }
 
-/**
- * Suy luận giả lập (multi-paragraph, tiếng Việt) quanh ý tưởng của tin nhắn user cuối.
- * Độ dài ~1300 ký tự -> ~100 chunk (2 từ/chunk) x ~90ms ~= 7-9s.
- */
+/** Suy luận giả lập (multi-paragraph, tiếng Việt) — phát qua `delta.reasoning_content`. */
 function buildThinkingText(lastUserMessage: string): string {
   const idea = truncateForQuote(lastUserMessage, 160);
   return [
@@ -82,33 +86,27 @@ function buildThinkingText(lastUserMessage: string): string {
   ].join('\n\n');
 }
 
-/**
- * Câu trả lời giả lập (markdown, tiếng Việt): ghi chú rõ đây là MOCK + tóm tắt/trích ý tưởng user cuối.
- * Độ dài ~1050 ký tự -> ~80 chunk (2 từ/chunk) x ~60ms ~= 4.5-5.5s.
- */
+/** Câu trả lời giả lập (markdown) — phát qua `delta.content`. */
 function buildAnswerText(lastUserMessage: string, model: string, thinkingEnabled: boolean): string {
   const idea = truncateForQuote(lastUserMessage, 140);
   const thinkingNote = thinkingEnabled ? ' với thinking mode bật' : ' với thinking mode tắt';
   return [
-    'Đây là **luồng MOCK** của ZaiWebHub dev-console — phía sau không có model thật, chỉ có một bộ phát SSE giả lập chạy đúng wire contract của `packages/protocol`: thinking → answer → finish → [DONE].',
+    'Đây là **luồng MOCK** của ZaiWebHub dev-console — phía sau không có model thật, chỉ có một bộ phát SSE giả lập chạy đúng wire MỚI upstream-native (F4): chunk `delta.reasoning_content` → chunk `delta.content` → chunk `finish_reason` + `usage` → `[DONE]`.',
     `Ý tưởng bạn vừa gửi: "${idea}".`,
     [
       'Tóm tắt nhanh ý tưởng (giả lập):',
       '',
       '- **Bản chất**: đang dùng ý tưởng này làm trọng tải kiểm thử để đo độ liền mạch của stream SSE qua các tầng proxy.',
       '- **Giá trị cốt lõi**: delta nhỏ phát theo nhịp 40-80ms giúp phát hiện sớm nghẽn, gộp chunk hoặc mất event ở gateway.',
-      '- **Rủi ro cần đo**: TTFB, khoảng lặng giữa các event, và stream kết thúc thiếu `finish` hoặc `[DONE]`.',
-      '- **Bước tiếp theo**: thay mock bằng `@zaiwebhub/zai-adapter` thật (T1-b), rồi đổi endpoint sang webhub (T4-a); UI giữ nguyên wire contract.',
+      '- **Rủi ro cần đo**: TTFB, khoảng lặng giữa các event, và stream kết thúc thiếu `finish_reason` hoặc `[DONE]`.',
+      '- **Bước tiếp theo**: đổi endpoint sang `adapter` (T1-b thật) hoặc `webhub` (T4-a) bằng ô chọn chế độ trong stats bar; UI giữ nguyên wire.',
     ].join('\n'),
-    'Muốn xem nhánh lỗi, bật tùy chọn "Mock lỗi stream (error_test)" rồi gửi lại — mock sẽ phát `event: error` sau 2 thinking_delta và kết thúc bằng `[DONE]`.',
+    'Muốn xem nhánh lỗi, bật tùy chọn "Mock lỗi stream (error_test)" rồi gửi lại — mock sẽ phát `event: error` sau 2 chunk suy luận và kết thúc bằng `[DONE]`.',
     `Lượt này dùng model \`${model}\`${thinkingNote}.`,
   ].join('\n\n');
 }
 
-/**
- * Chia text thành các chunk nhỏ theo số từ, GIỮ NGUYÊN mọi khoảng trắng/ký tự xuống dòng
- * (dùng tokenizer có capture group) để nối lại đúng văn bản gốc phía client.
- */
+/** Chia text thành các chunk nhỏ theo số từ, GIỮ NGUYÊN mọi khoảng trắng/xuống dòng. */
 function chunkText(text: string, wordsPerChunk: number): string[] {
   const tokens = text.split(/(\s+)/).filter((t) => t.length > 0);
   const chunks: string[] = [];
@@ -127,6 +125,25 @@ function chunkText(text: string, wordsPerChunk: number): string[] {
   }
   if (buffer.length > 0) chunks.push(buffer);
   return chunks;
+}
+
+/** Dựng 1 frame chunk OpenAI-compatible (wire F4). */
+function chunkFrame(
+  base: { id: string; created: number; model: string },
+  delta: Record<string, unknown>,
+  extra?: { finishReason?: string; usage?: Record<string, number> },
+): string {
+  const choice: Record<string, unknown> = { index: 0, delta };
+  if (extra?.finishReason) choice.finish_reason = extra.finishReason;
+  const frame: Record<string, unknown> = {
+    id: base.id,
+    created: base.created,
+    object: 'chat.completion.chunk',
+    model: base.model,
+    choices: [choice],
+  };
+  if (extra?.usage) frame.usage = extra.usage; // usage top-level (tolerant parser đọc cả choices[0].usage)
+  return `data: ${JSON.stringify(frame)}\n\n`;
 }
 
 export async function POST(req: NextRequest) {
@@ -150,13 +167,32 @@ export async function POST(req: NextRequest) {
     typeof body.model === 'string' && body.model.trim().length > 0
       ? body.model.trim()
       : DEFAULT_MODEL;
-  const thinkingEnabled = body.thinking !== false;
+  const thinkingEnabled = parseThinkingEnabled(body.thinking);
   const errorTest = typeof body.error_test === 'boolean' && body.error_test;
 
   const lastUserMessage =
     [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
   const thinkingText = buildThinkingText(lastUserMessage);
   const answerText = buildAnswerText(lastUserMessage, model, thinkingEnabled);
+
+  // Token usage giả lập (ước lượng ~4 ký tự/token) — chỉ để UI có số hiển thị.
+  const promptChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+  const promptTokens = Math.max(1, Math.round(promptChars / 4));
+  const completionTokens = Math.max(
+    1,
+    Math.round((thinkingText.length + answerText.length) / 4),
+  );
+  const usage = {
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: promptTokens + completionTokens,
+  };
+
+  const base = {
+    id: `mock-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+    created: Math.floor(Date.now() / 1000),
+    model,
+  };
 
   const encoder = new TextEncoder();
   let closed = false;
@@ -187,23 +223,26 @@ export async function POST(req: NextRequest) {
         }
       };
 
-      const heartbeat = setInterval(() => {
-        send(': keep-alive\n\n');
-      }, HEARTBEAT_INTERVAL_MS);
-
       try {
         let errored = false;
 
-        // (a)(b) thinking_start + thinking_delta*
+        // (a) chunk suy luận — `delta.reasoning_content` (client F7 tự hiện panel từ chunk đầu tiên)
         if (thinkingEnabled) {
-          send(encodeSse('thinking_start', { message: 'Thinking...' }));
           const pieces = chunkText(thinkingText, THINKING_WORDS_PER_CHUNK);
           let sent = 0;
           for (const piece of pieces) {
             if (closed) break;
             await sleep(randMs(THINKING_CHUNK_MIN_MS, THINKING_CHUNK_MAX_MS));
             if (closed) break;
-            if (!send(encodeSse('thinking_delta', { delta: piece }))) break;
+            if (
+              !send(
+                chunkFrame(base, {
+                  reasoning_content: piece,
+                }),
+              )
+            ) {
+              break;
+            }
             sent += 1;
             if (errorTest && sent >= ERROR_AFTER_DELTAS) {
               errored = true;
@@ -212,9 +251,8 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // (c)(d) answer_start + answer chunks (OpenAI-compatible data lines)
+        // (b) chunk trả lời — `delta:{role,content}`
         if (!closed && !errored) {
-          send(encodeSse('answer_start', { message: 'Answer:' }));
           const pieces = chunkText(answerText, ANSWER_WORDS_PER_CHUNK);
           let sent = 0;
           for (const piece of pieces) {
@@ -223,15 +261,16 @@ export async function POST(req: NextRequest) {
             if (closed) break;
             if (
               !send(
-                encodeSse(null, {
-                  choices: [{ delta: { content: piece }, index: 0, finish_reason: null }],
+                chunkFrame(base, {
+                  role: 'assistant',
+                  content: piece,
                 }),
               )
             ) {
               break;
             }
             sent += 1;
-            // Nhánh error_test khi thinking bị tắt: inject error sau 2 answer_delta.
+            // Nhánh error_test khi thinking tắt: inject error sau 2 answer chunk.
             if (errorTest && !thinkingEnabled && sent >= ERROR_AFTER_DELTAS) {
               errored = true;
               break;
@@ -239,24 +278,28 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // (e) finish hoặc error
+        // (c) kết thúc: lỗi (event:error) hoặc chunk finish_reason + usage — rồi [DONE] ở finally
         if (closed) {
           // Client abort: không phát thêm gì, chỉ đóng sạch ở finally.
         } else if (errored) {
           send(
-            encodeSse('error', {
+            `event: error\ndata: ${JSON.stringify({
               error: { message: ERROR_TEST_MESSAGE, type: 'upstream_error' },
-            }),
+            })}\n\n`,
           );
         } else {
-          send(encodeSse('finish', { reason: 'stop' }));
+          send(
+            chunkFrame(base, { role: 'assistant', content: '' }, {
+              finishReason: 'stop',
+              usage,
+            }),
+          );
         }
       } catch {
         // Không bao giờ đẩy lỗi mock-stream ra log server; coi như client đã ngắt.
         closed = true;
       } finally {
-        clearInterval(heartbeat);
-        // (f) [DONE] sentinel rồi đóng stream.
+        // (d) sentinel [DONE] rồi đóng stream (cả nhánh lỗi đều kết thúc bằng [DONE] — contract).
         send('data: [DONE]\n\n');
         try {
           controller.close();

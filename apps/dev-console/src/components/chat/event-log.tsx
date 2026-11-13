@@ -12,10 +12,9 @@ interface EventLogProps {
 }
 
 const NAME_COLOR: Record<string, string> = {
-  thinking_start: 'text-amber-600 dark:text-amber-400',
   thinking_delta: 'text-amber-600 dark:text-amber-400',
-  answer_start: 'text-emerald-600 dark:text-emerald-400',
   answer_delta: 'text-emerald-600 dark:text-emerald-400',
+  response_meta: 'text-sky-600 dark:text-sky-400',
   finish: 'text-violet-600 dark:text-violet-400',
   error: 'text-red-600 dark:text-red-400',
   done: 'text-muted-foreground',

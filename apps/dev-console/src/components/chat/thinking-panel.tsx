@@ -15,17 +15,24 @@ interface ThinkingPanelProps {
   /** True while thinking tokens are still arriving. */
   active: boolean;
   durationMs?: number | null;
+  /**
+   * F7: khi đã yêu cầu thinking nhưng upstream KHÔNG trả chunk `delta.reasoning_content`
+   * nào tới cuối stream → hiện placeholder trong panel (không bao giờ chặn/ẩn câu trả lời).
+   * VD: "Upstream không trả reasoning (proxy sandbox)".
+   */
+  placeholder?: string | null;
 }
 
 /**
  * Collapsible panel that displays the streamed reasoning_content.
- * Auto-opens while the model is thinking and auto-collapses as soon as the
+ * AUTO behavior (F7 — không config): chỉ xuất hiện khi thực sự có reasoning (hoặc placeholder);
+ * auto-opens while the model is thinking and auto-collapses as soon as the
  * answer starts, unless the user toggled it manually.
  */
-export function ThinkingPanel({ reasoning, active, durationMs }: ThinkingPanelProps) {
+export function ThinkingPanel({ reasoning, active, durationMs, placeholder }: ThinkingPanelProps) {
   // null = follow the `active` prop automatically; boolean = user override.
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const open = userOpen ?? active;
+  const open = userOpen ?? (active || Boolean(placeholder && reasoning.length === 0));
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,13 +85,21 @@ export function ThinkingPanel({ reasoning, active, durationMs }: ThinkingPanelPr
             ref={contentRef}
             className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words border-t border-amber-200/70 px-3 py-2 font-mono text-xs leading-relaxed text-amber-900/90 dark:border-amber-900/50 dark:text-amber-200/90"
           >
-            {reasoning}
-            {active && (
-              <span
-                className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-amber-500 align-middle"
-                aria-hidden="true"
-              />
-            )}
+            {reasoning.length > 0 ? (
+              <>
+                {reasoning}
+                {active && (
+                  <span
+                    className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-amber-500 align-middle"
+                    aria-hidden="true"
+                  />
+                )}
+              </>
+            ) : placeholder ? (
+              <p className="font-sans italic text-amber-700/80 dark:text-amber-300/70">
+                {placeholder}
+              </p>
+            ) : null}
           </div>
         </CollapsibleContent>
       </div>

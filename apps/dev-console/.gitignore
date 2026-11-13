@@ -1,8 +1,2 @@
-node_modules/
-.next/
-out/
-build/
-*.log
-next-env.d.ts
-*.tsbuildinfo
-.DS_Store
+# compat bundle output (scripts/build-compat.ts) — artifact, không commit
+.zai-compat/

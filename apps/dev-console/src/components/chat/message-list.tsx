@@ -89,8 +89,20 @@ function MetricsLine({ message }: { message: ChatMessage }) {
       {' · '}Suy luận {formatCount(m.reasoningChars)} ký tự
       {' · '}Trả lời {formatCount(m.answerChars)} ký tự
       {m.answerCharsPerSec != null ? ` · ${m.answerCharsPerSec} c/s` : ''}
+      {m.reasoningChunks != null && m.answerChunks != null
+        ? ` · ${m.reasoningChunks}🧠/${m.answerChunks}💬 chunks`
+        : ''}
       {' · '}{m.eventCount} sự kiện
+      {m.finishReason ? ` · finish=${m.finishReason}` : ''}
+      {m.usage
+        ? ` · usage ${m.usage.prompt_tokens}/${m.usage.completion_tokens}${
+            m.usage.total_tokens != null ? `/${m.usage.total_tokens}` : ''
+          }`
+        : ''}
+      {m.jobId ? ` · job=${m.jobId}` : ''}
+      {m.requestId ? ` · req=${m.requestId}` : ''}
       {!m.sawFinish ? ' · không nhận được finish' : ''}
+      {!m.sawDone ? ' · không nhận được [DONE]' : ''}
     </span>
   );
 }
@@ -117,7 +129,18 @@ function AssistantBubble({
   onRetry: (messageId: string) => void;
 }) {
   const thinkingActive = streaming && message.content.length === 0 && message.reasoning.length > 0;
-  const showThinking = message.reasoning.length > 0 || thinkingActive;
+  /**
+   * F7 (không config): panel chỉ xuất hiện khi (a) thực sự có reasoning, hoặc
+   * (b) đã yêu cầu thinking nhưng tới cuối stream upstream không trả reasoning nào
+   * → placeholder "Upstream không trả reasoning (proxy sandbox)". Panel không bao giờ
+   * chặn/ẩn câu trả lời (nằm trên bubble answer, collapsible).
+   */
+  const noReasoningPlaceholder =
+    !streaming &&
+    message.status === 'done' &&
+    message.thinkingRequested === true &&
+    message.reasoning.length === 0;
+  const showThinking = message.reasoning.length > 0 || thinkingActive || noReasoningPlaceholder;
   const canRetry =
     (message.status === 'interrupted' || message.status === 'error' || message.status === 'stopped') &&
     !streaming;
@@ -129,6 +152,9 @@ function AssistantBubble({
           reasoning={message.reasoning}
           active={thinkingActive}
           durationMs={message.metrics?.thinkingMs ?? live?.thinkingMs ?? null}
+          placeholder={
+            noReasoningPlaceholder ? 'Upstream không trả reasoning (proxy sandbox)' : null
+          }
         />
       )}
 
@@ -147,7 +173,7 @@ function AssistantBubble({
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           {message.reasoning.length > 0
             ? 'Suy luận xong, đang chờ câu trả lời...'
-            : 'Đang kết nối tới mock endpoint...'}
+            : 'Đang kết nối tới endpoint...'}
         </div>
       ) : !message.content && message.status !== 'streaming' ? (
         <p className="text-xs italic text-muted-foreground">
@@ -198,12 +224,15 @@ function EmptyState({ onPickPrompt }: { onPickPrompt: (text: string) => void }) 
           <BrainCircuit className="h-6 w-6 text-primary" aria-hidden="true" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold">Kiểm tra luồng SSE MOCK: thinking → answer</h2>
+          <h2 className="text-lg font-semibold">Kiểm tra luồng SSE upstream-native: thinking → answer</h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Gửi một prompt ý tưởng để theo dõi dòng suy luận và câu trả lời streaming theo thời gian
-            thực. Endpoint hiện tại là <span className="font-mono">/api/mock-chat</span> — giả lập
-            đúng wire contract của protocol; khi adapter và webhub thật được ghép vào, UI giữ nguyên.
-            Toàn bộ lịch sử hội thoại được gửi kèm mỗi lượt nên phiên có bộ nhớ giữa các lần hỏi.
+            thực. Wire là upstream nguyên bản (F4): chunk `delta.reasoning_content` → `delta.content`
+            → chunk cuối `finish_reason` + `usage` → `[DONE]`. Chọn endpoint trong stats bar:
+            <span className="font-mono"> Mock</span> (giả lập),
+            <span className="font-mono"> Adapter</span> (streamChat thật),
+            <span className="font-mono"> WebHub (E2E)</span> qua hub thật. Toàn bộ lịch sử hội
+            thoại được gửi kèm mỗi lượt nên phiên có bộ nhớ giữa các lần hỏi.
           </p>
         </div>
         <div className="flex w-full flex-col gap-2">

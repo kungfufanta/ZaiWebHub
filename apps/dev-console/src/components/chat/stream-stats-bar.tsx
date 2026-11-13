@@ -1,8 +1,17 @@
 'use client';
 
 import { Terminal } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { ChatMessage, LiveStreamStats } from '@/lib/chat-types';
+import { ENDPOINT_MODES, endpointModeMeta, type EndpointMode } from '@/lib/endpoints';
 import { formatCount, formatMs } from '@/lib/chat-utils';
 import { cn } from '@/lib/utils';
 
@@ -13,6 +22,9 @@ interface StreamStatsBarProps {
   eventCount: number;
   logOpen: boolean;
   onToggleLog: () => void;
+  /** Chế độ endpoint hiện tại (mock | adapter | webhub). */
+  mode: EndpointMode;
+  onModeChange: (mode: EndpointMode) => void;
 }
 
 const STATUS_META: Record<string, { label: string; dot: string; pulse?: boolean; text?: string }> = {
@@ -28,18 +40,25 @@ const STATUS_META: Record<string, { label: string; dot: string; pulse?: boolean;
   idle: { label: 'Sẵn sàng', dot: 'bg-muted-foreground/50' },
 };
 
-function Chip({ label, value }: { label: string; value: string }) {
+function Chip({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-muted/70 px-2 py-1 font-mono text-[11px] leading-4">
-      <span className="text-muted-foreground">{label}</span>
-      <span>{value}</span>
+    <span
+      className={cn(
+        'inline-flex max-w-[16rem] items-center gap-1 rounded-md bg-muted/70 px-2 py-1 text-[11px] leading-4',
+        mono && 'font-mono',
+      )}
+    >
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="truncate">{value}</span>
     </span>
   );
 }
 
 /**
- * Live monitor strip: shows stream phase, latency and throughput so it is
- * easy to verify that the thinking -> answer stream is not interrupted.
+ * Live monitor strip: stream phase, latency, throughput, endpoint mode switcher
+ * (mock/adapter/webhub — T1-c nửa 2) và nhãn xác minh bắt buộc
+ * (mock-verified khi Mock; no-reasoning (proxy) khi Adapter/WebHub trong sandbox —
+ * G2-4: proxy sandbox KHÔNG emit reasoning_content thật).
  */
 export function StreamStatsBar({
   live,
@@ -48,6 +67,8 @@ export function StreamStatsBar({
   eventCount,
   logOpen,
   onToggleLog,
+  mode,
+  onModeChange,
 }: StreamStatsBarProps) {
   const statusKey = live
     ? live.phase
@@ -62,6 +83,14 @@ export function StreamStatsBar({
   const reasoningChars = live ? live.reasoningChars : (lastMessage?.metrics?.reasoningChars ?? null);
   const answerChars = live ? live.answerChars : (lastMessage?.metrics?.answerChars ?? null);
   const cps = live ? live.charsPerSec : (lastMessage?.metrics?.answerCharsPerSec ?? null);
+  const reasoningChunks = live
+    ? live.reasoningChunks
+    : (lastMessage?.metrics?.reasoningChunks ?? null);
+  const answerChunks = live ? live.answerChunks : (lastMessage?.metrics?.answerChunks ?? null);
+  const jobId = live ? live.jobId : (lastMessage?.metrics?.jobId ?? null);
+  const requestId = live ? live.requestId : (lastMessage?.metrics?.requestId ?? null);
+
+  const modeMeta = endpointModeMeta(mode);
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2 sm:px-4">
@@ -84,8 +113,48 @@ export function StreamStatsBar({
       <Chip label="Suy luận" value={`${formatCount(reasoningChars)}c`} />
       <Chip label="Trả lời" value={`${formatCount(answerChars)}c`} />
       <Chip label="Tốc độ" value={cps != null ? `${cps}c/s` : '—'} />
+      {reasoningChunks != null && (
+        <Chip label="chunks" value={`${reasoningChunks}🧠/${answerChunks ?? 0}💬`} />
+      )}
 
-      <div className="ml-auto">
+      {/* T4-a debug: hub set X-Job-Id / X-Request-Id trước khi stream */}
+      {jobId && <Chip label="job" value={jobId} />}
+      {requestId && <Chip label="req" value={requestId} />}
+
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+        {/* Endpoint mode switcher — mặc định Mock (UI luôn chạy được không cần hub). */}
+        <Select value={mode} onValueChange={(v) => onModeChange(v as EndpointMode)}>
+          <SelectTrigger
+            aria-label="Chọn endpoint stream"
+            className="h-6 w-[9.5rem] gap-1 rounded-full px-2.5 text-[11px]"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ENDPOINT_MODES.map((m) => (
+              <SelectItem key={m.value} value={m.value} className="text-xs">
+                <span className="flex flex-col">
+                  <span>{m.label}</span>
+                  <span className="text-[10px] text-muted-foreground">{m.verifyLabel}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Nhãn xác minh bắt buộc (PLANS.md §8.7) — theo chế độ đang chọn */}
+        <Badge
+          variant="outline"
+          className={cn(
+            'shrink-0 font-mono text-[10px]',
+            mode === 'mock'
+              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+              : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+          )}
+        >
+          {modeMeta.verifyLabel}
+        </Badge>
+
         <Button
           variant={logOpen ? 'default' : 'outline'}
           size="sm"

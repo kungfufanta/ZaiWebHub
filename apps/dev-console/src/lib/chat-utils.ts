@@ -85,7 +85,9 @@ export function buildHistory(
       (m.status === 'done' || m.status === 'stopped')
     );
   });
-  const history = usable
+  // Ghi chú: role là string rộng (system/user/assistant) — không suy inferred ChatRole
+  // từ map phía trên, nếu không unshift({role:'system'}) bị TS2322.
+  const history: { role: string; content: string }[] = usable
     .slice(-maxMessages)
     .map((m) => ({ role: m.role, content: m.content }));
   const system = systemPrompt.trim();

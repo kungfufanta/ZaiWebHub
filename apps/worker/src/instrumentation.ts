@@ -1,6 +1,20 @@
-// T2-a se khoi dong WS client outbound toi HUB_URL tai day (khoi dong 1 lan khi boot, KHONG phai trong request handler).
-export async function register() {
+// apps/worker — src/instrumentation.ts (T2-a)
+// Boot WS client outbound ĐÚNG 1 LẦN khi Next.js server start (D1: KHÔNG chạy trong request handler).
+// NOTE: dùng đúng pattern `if (process.env.NEXT_RUNTIME === 'nodejs') { await import(...) }` —
+// NEXT_RUNTIME được Next inline tại build-time (DefinePlugin) nên nhánh edge bị fold bỏ,
+// module graph node-only (ws-client → executor → zai-adapter → zsdk/ws) KHÔNG được compile cho edge.
+let booted = false;
+
+export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    // dynamic import se them o T2-a; giu stub de tranh chan build
+    if (booted) return;
+    booted = true;
+    try {
+      const { startWorker } = await import('./worker/ws-client');
+      startWorker();
+    } catch (err) {
+      booted = false; // cho phép thử lại nếu import thất bại
+      console.error('[worker] boot failed:', err instanceof Error ? err.message : err);
+    }
   }
 }

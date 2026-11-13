@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3004",
     "build": "next build",
     "start": "next start"
   },
@@ -11,12 +11,16 @@
     "next": "^15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "z-ai-web-dev-sdk": "*"
+    "z-ai-web-dev-sdk": "*",
+    "@zaiwebhub/protocol": "workspace:*",
+    "@zaiwebhub/zai-adapter": "workspace:*",
+    "ws": "^8"
   },
   "devDependencies": {
     "typescript": "^5",
     "@types/node": "^22",
     "@types/react": "^19",
-    "@types/react-dom": "^19"
+    "@types/react-dom": "^19",
+    "@types/ws": "^8"
   }
 }

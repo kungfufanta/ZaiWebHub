@@ -33,8 +33,14 @@ import type {
   EventLogEntry,
   LiveStreamStats,
   MessageStatus,
+  UsageInfo,
 } from '@/lib/chat-types';
 import { MODEL_OPTIONS, buildHistory, createMessage } from '@/lib/chat-utils';
+import {
+  DEFAULT_ENDPOINT_MODE,
+  isEndpointMode,
+  type EndpointMode,
+} from '@/lib/endpoints';
 import { streamChat } from '@/lib/sse-client';
 import { cn } from '@/lib/utils';
 
@@ -47,6 +53,8 @@ interface StreamSettings {
   systemPrompt: string;
   maxHistory: number;
   logOpen: boolean;
+  /** Chế độ endpoint: mock | adapter | webhub (T1-c nửa 2 / T4-a prep). */
+  endpointMode: EndpointMode;
 }
 
 const DEFAULT_SETTINGS: StreamSettings = {
@@ -56,6 +64,7 @@ const DEFAULT_SETTINGS: StreamSettings = {
   systemPrompt: '',
   maxHistory: 40,
   logOpen: false,
+  endpointMode: DEFAULT_ENDPOINT_MODE, // mặc định Mock — UI luôn chạy được không cần hub
 };
 
 export function ChatTester() {
@@ -115,6 +124,9 @@ export function ChatTester() {
             ? Math.round(parsed.maxHistory)
             : DEFAULT_SETTINGS.maxHistory,
         logOpen: typeof parsed?.logOpen === 'boolean' ? parsed.logOpen : DEFAULT_SETTINGS.logOpen,
+        endpointMode: isEndpointMode(parsed?.endpointMode)
+          ? parsed.endpointMode
+          : DEFAULT_SETTINGS.endpointMode,
       };
       setSettings(merged);
       setSettingsLoaded(true);
@@ -163,7 +175,11 @@ export function ChatTester() {
       reasoningChars: 0,
       answerChars: 0,
       charsPerSec: null,
+      reasoningChunks: 0,
+      answerChunks: 0,
       eventCount: 0,
+      jobId: null,
+      requestId: null,
     });
 
     const t0 = performance.now();
@@ -172,8 +188,14 @@ export function ChatTester() {
     let answerStartAt: number | null = null;
     let reasoning = '';
     let content = '';
+    let reasoningChunks = 0;
+    let answerChunks = 0;
     let sawFinish = false;
     let sawDone = false;
+    let finishReason: string | null = null;
+    let usage: UsageInfo | null = null;
+    let jobId: string | null = null;
+    let requestId: string | null = null;
     let errorText: string | null = null;
     let eventCount = 0;
     let phase: LiveStreamStats['phase'] = 'connecting';
@@ -196,7 +218,11 @@ export function ChatTester() {
         answerChars: content.length,
         charsPerSec:
           answerMs && answerMs > 0 ? Math.round((content.length / answerMs) * 1000) : null,
+        reasoningChunks,
+        answerChunks,
         eventCount,
+        jobId,
+        requestId,
       });
     };
 
@@ -216,43 +242,63 @@ export function ChatTester() {
 
     try {
       await streamChat({
+        mode: settings.endpointMode,
         messages: history,
         model: settings.model,
         thinking: settings.thinkingEnabled,
-        errorTest: settings.errorTest,
+        errorTest: settings.endpointMode === 'mock' ? settings.errorTest : false,
         signal: controller.signal,
         onEvent: (ev) => {
           if (ttfbAt === null) ttfbAt = performance.now();
           switch (ev.type) {
-            case 'thinking_start':
-              thinkingStartAt = performance.now();
-              phase = 'thinking';
-              logEvent('thinking_start', 0, '');
-              paint(true);
-              break;
             case 'thinking_delta':
+              // Wire F4: không còn thinking_start — chunk reasoning_content ĐẦU TIÊN là mốc bắt đầu (F7).
+              if (thinkingStartAt === null) {
+                thinkingStartAt = performance.now();
+                phase = 'thinking';
+                paint(true);
+              }
+              reasoningChunks += 1;
               reasoning += ev.delta;
               logEvent('thinking_delta', ev.delta.length, ev.delta.slice(0, 80));
               patch({ reasoning });
               paint();
               break;
-            case 'answer_start':
-              answerStartAt = performance.now();
-              phase = 'answering';
-              logEvent('answer_start', 0, '');
-              patch({ reasoning });
-              paint(true);
-              break;
             case 'answer_delta':
+              if (answerStartAt === null) {
+                answerStartAt = performance.now();
+                phase = 'answering';
+                paint(true);
+              }
+              answerChunks += 1;
               content += ev.delta;
               logEvent('answer_delta', ev.delta.length, ev.delta.slice(0, 80));
               patch({ content });
               paint();
               break;
+            case 'response_meta':
+              jobId = ev.jobId;
+              requestId = ev.requestId;
+              if (ev.jobId || ev.requestId) {
+                logEvent(
+                  'response_meta',
+                  0,
+                  [ev.jobId ? `job=${ev.jobId}` : null, ev.requestId ? `req=${ev.requestId}` : null]
+                    .filter(Boolean)
+                    .join(' '),
+                );
+              }
+              break;
             case 'finish':
               sawFinish = true;
+              finishReason = ev.reason;
+              usage = ev.usage ?? null;
               phase = 'finalizing';
-              logEvent(`finish: ${ev.reason}`, 0, '');
+              logEvent(
+                `finish: ${ev.reason}${ev.usage ? ` · tokens ${ev.usage.prompt_tokens}/${ev.usage.completion_tokens}` : ''}`,
+                0,
+                '',
+              );
               break;
             case 'error':
               errorText = ev.message;
@@ -305,9 +351,15 @@ export function ChatTester() {
         reasoningChars: reasoning.length,
         answerChars: content.length,
         answerCharsPerSec: charsPerSec,
+        reasoningChunks,
+        answerChunks,
         sawFinish,
         sawDone,
         eventCount,
+        finishReason,
+        usage,
+        jobId,
+        requestId,
       },
     });
 
@@ -337,7 +389,11 @@ export function ChatTester() {
     if (!text || streamingRef.current) return;
     const currentSession = store.activeSession ?? store.createNewSession();
     const userMsg = createMessage({ role: 'user', content: text });
-    const assistantMsg = createMessage({ role: 'assistant', status: 'streaming' });
+    const assistantMsg = createMessage({
+      role: 'assistant',
+      status: 'streaming',
+      thinkingRequested: settings.thinkingEnabled,
+    });
     const history = buildHistory(
       [...currentSession.messages, userMsg],
       settings.maxHistory,
@@ -368,7 +424,11 @@ export function ChatTester() {
       toast({ title: 'Không thể thử lại', description: 'Không còn lịch sử nào để gửi lại.' });
       return;
     }
-    const replacement = createMessage({ role: 'assistant', status: 'streaming' });
+    const replacement = createMessage({
+      role: 'assistant',
+      status: 'streaming',
+      thinkingRequested: settings.thinkingEnabled,
+    });
     store.removeMessage(session.id, messageId);
     store.appendMessages(session.id, [replacement]);
     await runStream(session.id, replacement.id, history);
@@ -578,6 +638,8 @@ export function ChatTester() {
             eventCount={eventLog.length}
             logOpen={settings.logOpen}
             onToggleLog={() => updateSetting('logOpen', !settings.logOpen)}
+            mode={settings.endpointMode}
+            onModeChange={(m) => updateSetting('endpointMode', m)}
           />
 
           <MessageList
@@ -598,6 +660,7 @@ export function ChatTester() {
             streaming={streaming}
             historyCount={historyCount}
             empty={messages.length === 0}
+            mode={settings.endpointMode}
             errorTest={settings.errorTest}
             onErrorTestChange={(v) => updateSetting('errorTest', v)}
           />

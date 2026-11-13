@@ -55,6 +55,9 @@ export const JobDoneFrameSchema = z.object({
   usage: z
     .object({ prompt_tokens: z.number().int(), completion_tokens: z.number().int() })
     .optional(),
+  // F6 mở rộng (Đợt 3 integration): true = worker đã relay dòng `data: [DONE]` của upstream
+  // trong chunk bytes → hub KHÔNG flush thêm [DONE] (tránh trùng lặp). Bỏ qua → hub flush defensively.
+  upstream_done_relayed: z.boolean().optional(),
 });
 export const JobErrorFrameSchema = z.object({
   type: z.literal('job.error'),
@@ -80,7 +83,13 @@ export type WorkerRegisterFrame = {
 };
 export type WorkerHeartbeatFrame = { type: 'worker.heartbeat'; ts: number; inflight: number };
 export type JobAckFrame = { type: 'job.ack'; job_id: string };
-export type JobDoneFrame = { type: 'job.done'; job_id: string; finish_reason: string; usage?: JobUsage };
+export type JobDoneFrame = {
+  type: 'job.done';
+  job_id: string;
+  finish_reason: string;
+  usage?: JobUsage;
+  upstream_done_relayed?: boolean;
+};
 export type JobErrorFrame = {
   type: 'job.error';
   job_id: string;

@@ -13,14 +13,14 @@ export default function HomePage() {
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold sm:text-base">ZaiWebHub dev-console</h1>
             <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-              SSE mock stream · thinking mode · phiên chat có bộ nhớ
+              SSE harness upstream-native (F4) · thinking tự động theo reasoning_content · phiên chat có bộ nhớ
             </p>
           </div>
           <Badge
             variant="outline"
-            className="ml-auto shrink-0 border-amber-400/60 bg-amber-500/10 font-mono text-[10px] font-medium text-amber-700 dark:border-amber-700/60 dark:text-amber-400"
+            className="ml-auto shrink-0 border-sky-500/50 bg-sky-500/10 font-mono text-[10px] font-medium text-sky-700 dark:border-sky-700/60 dark:text-sky-400"
           >
-            POST /api/mock-chat
+            mock · adapter · webhub
           </Badge>
         </div>
       </header>
@@ -34,9 +34,11 @@ export default function HomePage() {
 
       <footer className="mt-auto border-t bg-card">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2.5 sm:px-4">
-          <p className="text-xs text-muted-foreground">ZaiWebHub dev-console — MOCK mode</p>
+          <p className="text-xs text-muted-foreground">
+            ZaiWebHub dev-console — port 3005 · endpoint chọn trong stats bar
+          </p>
           <p className="hidden font-mono text-[10px] text-muted-foreground md:block">
-            thinking_start → thinking_delta → answer_start → finish → [DONE]
+            delta.reasoning_content → delta.content → finish_reason + usage → [DONE]
           </p>
         </div>
       </footer>

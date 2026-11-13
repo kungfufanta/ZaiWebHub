@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "bun run scripts/build-compat.ts && next dev -p 3005",
+    "build:compat": "bun run scripts/build-compat.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint ."
@@ -54,7 +55,9 @@
     "sonner": "^2.0.6",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "@zaiwebhub/protocol": "workspace:*",
+    "@zaiwebhub/zai-adapter": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

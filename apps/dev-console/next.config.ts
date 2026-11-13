@@ -7,6 +7,30 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // WebHub mode (T4-a): client luôn fetch `/v1/chat/completions?XTransformPort=3003`.
+  // - Khi chạy QUA GATEWAY sandbox: gateway thấy XTransformPort=3003 → forward thẳng webhub (rewrite không chạy).
+  // - Khi truy cập TRỰC TIẾP dev-console (local/agent-browser, không qua gateway): rewrite dưới đây
+  //   proxy server-side sang webhub — cùng 1 URL client, 2 ngữ cảnh đều chạy.
+  async rewrites() {
+    return [
+      {
+        source: "/v1/chat/completions",
+        destination: "http://localhost:3003/v1/chat/completions",
+      },
+    ];
+  },
+  // TEMPORARY compat (Đợt 3 — xem scripts/build-compat.ts): packages/protocol +
+  // packages/zai-adapter ship raw TS với import NodeNext './frames.js' mà không có
+  // dist — Turbopack áp fullySpecified cho ESM nên không map '.js'→'.ts' được.
+  // build-compat.ts bundle 2 package thành JS thuần vào .zai-compat/, alias ở dưới
+  // trỏ specifier sang bản đó. BỎ compat này khi packages/ ship dist hoặc đổi style
+  // import (flag cho owner + agent 3-a; apps/worker sẽ dính cùng lỗi ở T2-b).
+  turbopack: {
+    resolveAlias: {
+      "@zaiwebhub/zai-adapter": "./.zai-compat/adapter/index.js",
+      "@zaiwebhub/protocol": "./.zai-compat/protocol/index.js",
+    },
+  },
 };
 
 export default nextConfig;

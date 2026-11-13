@@ -71,4 +71,27 @@ export interface StateStore {
 - **T3-f**: grep toàn bộ log đầu ra của 1 phiên test: không có `reasoning_content`/API key nào xuất hiện; token worker trong registry hết hạn đúng TTL.
 
 ## Nhật ký thực thi (agent ghi vào đây)
-- (chưa có)
+- **Đợt 3 (2026-11-13) — Agent 3-b: T3-a + T3-b + T3-c + T3-d + T3-e + T3-f DONE (mock-verified, probe E2E qua `/tmp/hub-ws-probe*.mjs`; KHÔNG có worker thật stream chunk trong lúc test — worker của Agent 3-a đang build song song).**
+
+  **Files:** `src/index.ts` (Hono + serve :3003 + upgrade wiring + graceful shutdown), `src/hub/ws.ts` (T3-a: WSS noServer, upgrade chỉ `/worker` — path khác destroy; first frame phải `worker.register` valid + token TTL 60s + tenant khớp + `protocol_version` khớp, else close 4401; registry sweep 10s / heartbeat timeout 45s; duplicate worker_id → thay connection), `src/dispatch.ts` (T3-b: direct push → queue `tenant:{tid}:queue` in-memory; visibility timeout 30s/ack; max 1 re-dispatch; first chunk = streaming, cấm re-dispatch; job.cancel 2 hướng), `src/api/chat.ts` (T3-c: zod loose, `stream!==true`→400, headers SSE + X-Job-Id/X-Request-Id set TRƯỚC khi dispatch, ReadableStream enqueue raw bytes, abort signal → cancel), `src/state.ts` (T3-d: MemoryStateStore, mọi key prefix `tenant:{tid}:...`, getReasoning/saveReasoning no-op per D2), `src/auth.ts` (T3-e+f: TENANT_KEYS bearer, HMAC worker-token mint/verify timingSafeEqual, cảnh báo default secret + /internal unauthenticated lúc boot), `src/logger.ts` (JSON log, redact token/reasoning/messages/content), `package.json` (`dev` → `tsx watch src/index.ts`, thêm dep `@zaiwebhub/protocol`).
+
+  **Verify (chạy thật, port 3003):**
+  - `GET /healthz` → `{"ok":true,"service":"webhub","ts":...}`.
+  - POST `/v1/chat/completions` key sai → **401** `{"error":{"message":"invalid api key"}}`; `stream:false` → **400**; route lạ → **404**.
+  - Token shape: len=128, prefix `eyJ0ZW5h`, ttl=60 (log chỉ ghi shape, KHÔNG token nguyên văn).
+  - Register negative ×3 (bad token / first frame không phải register / tenant mismatch) → close **4401** + reason rõ.
+  - E2E probe worker: register→heartbeat→dispatch (direct push)→ack→3 binary `job.chunk`→`job.done`; `curl -N` nhận NGUYÊN bytes `data: {"choices":[{"delta":{"content":"xin chao N "}}]}` + `data: [DONE]`; headers đủ (Content-Type/Cache-Control no-cache, no-transform/X-Accel-Buffering/Connection/X-Job-Id/X-Request-Id); job_id header == job_id probe nhận.
+  - Dispatcher paths: queue→drain khi worker mới register (queue_key `tenant:default:queue` trong log); worker chết TRƯỚC stream → requeue → worker khác hoàn tất, user KHÔNG thấy lỗi; worker chết GIỮA stream (7 chunks) → `event: error` + `[DONE]`, KHÔNG re-dispatch; `job.error` trước chunk → re-dispatch (attempt 2) → fail lần 2 → `event: error` cho user; visibility timeout 30s đo đúng 30.000s ×2 → fail sau lần 2; user disconnect GIỮA stream → `job.cancel {reason:'user disconnected'}` tới worker < 1s (qua `request.signal` của @hono/node-server 1.19.19); disconnect TRƯỚC chunk → job hủy sạch, frame muộn bị bỏ qua.
+  - Conversation memory (T3-d): lượt 2 cùng `conversation_id` → log `message_count:2, has_history:true` (history prepend từ store; user message được lưu).
+  - T3-f grep toàn bộ log phiên test: `reasoning_content` 0 hit, giá trị API key 0 hit, token chỉ xuất hiện dạng `token_prefix` 8 ký tự.
+  - Typecheck: `tsc --noEmit -p apps/webhub` **PASS**. Lưu ý: `bun run typecheck` repo-wide đang FAIL ở `packages/zai-adapter` (lane Agent 3-a, đang code song song) — không thuộc phạm vi 3-b.
+  - Tích hợp chéo: worker thật của Agent 3-a (protocol_version 1) đã register + ack thành công vào hub này nhiều lần trong lúc test (T2-a ↔ T3-a tương thích).
+
+  **Deviation / open question cho owner:**
+  1. **[DONE] defensive trên `job.done`**: hub byte-blind KHÔNG thể biết worker đã relay `data: [DONE]` chưa (không được parse payload — F6). Đã chọn: luôn enqueue `data: [DONE]\n\n` trước close → client LUÔN kết thúc sạch, nhưng có rủi ro `[DONE]` TRÙNG LẶP khi worker (đúng F4/F6) đã relay nó trước đó. Đề xuất: protocol v2 thêm flag `saw_done` vào `job.done` để hub append có điều kiện. Đoạn upstream `[DONE]` không được relay thì hiện tại được hub bù — assumption "worker relay trọn vẹn" sẽ verify lại khi T2-b chạy thật.
+  2. `/internal/worker-token` KHÔNG xác thực ở dev — production hardening TODO (gate network/admin auth).
+  3. Assistant answer KHÔNG lưu vào StateStore (hub byte-blind không trích được từ raw SSE) — bộ nhớ hội thoại MVP dựa vào client gửi đủ history (OpenAI-style). Nếu owner muốn server-side memory đầy đủ → cân nhắc cho worker kèm `answer_text` trong `job.done` (quyết định của owner, không thuộc agent này).
+  4. `RedisStateStore` chưa làm (MVP Memory only) — bật khi có `REDIS_URL` (G3).
+  5. Backpressure `ws.bufferedAmount` (T2-b/T4-c) chưa cài ở hub — MVP chấp nhận, theo dõi ở load test.
+  6. Nhãn xác minh: toàn bộ kết quả ở đây là **mock-verified** (probe giả worker, không có upstream thật có reasoning). Mọi path reasoning (`reasoning_blocks`, getReasoning/saveReasoning) là **NOT tested** — không có reasoning thật trong sandbox (risk #1 PLANS.md).
+

@@ -107,16 +107,16 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 | T0-a | repo | Khung monorepo: bun workspaces (bun chỉ là installer), tsconfig.base, stub protocol/zai-adapter/webhub(Hono)/worker(Next.js) | — | install + typecheck OK | **done** |
 | T0-b | spike | Spike sandbox: node/next version, HTTPS outbound, WS handshake (Node WebSocket, 3 target + loopback) | — | Kết luận transport | **done — PASS** |
 | T0-c | spike | Dump shape thật của zsdk stream + thử biến thể model/thinking | T0-b pass | Chốt shape chunk + khả năng reasoning | **done — có finding lớn (xem section 9)** |
-| T1-a | packages/protocol | Types + zod: WS frames, JobPayload (có `tenant_id`, `reasoning_blocks` reserved), ReasoningBlock, capabilities, **binary envelope codec job.chunk (F4)**; `PROTOCOL_VERSION = 1`. **T1-a-1 FROZEN (Đợt 2) — làm ngay; T1-a-2 (shape reasoning) chờ owner duyệt G2** | T0-a, **G1 PASS** | roundtrip test pass (JSON + binary envelope) | **T1-a-1 frozen — in-progress; T1-a-2 blocked chờ owner** |
-| T1-b | packages/zai-adapter | `streamChat()` trả **`ReadableStream<Uint8Array>` RAW pass-through** (bỏ AsyncGenerator/toSSE theo lệnh Đợt 2) + reasoning utils + AbortSignal | T1-a-1 | Smoke: raw bytes liền mạch, có `[DONE]`, TTFB < 5s | todo |
+| T1-a | packages/protocol | Types + zod: WS frames, JobPayload (có `tenant_id`, `reasoning_blocks` reserved), ReasoningBlock, capabilities, **binary envelope codec job.chunk (F4)**; `PROTOCOL_VERSION = 1`. **T1-a-1 FROZEN (Đợt 2) — làm ngay; T1-a-2 (shape reasoning) chờ owner duyệt G2** | T0-a, **G1 PASS** | roundtrip test pass (JSON + binary envelope) | **done (T1-a-1 + T1-a-2 frozen + implement — Đợt 3)** |
+| T1-b | packages/zai-adapter | `streamChat()` trả **`ReadableStream<Uint8Array>` RAW pass-through** + reasoning utils + AbortSignal + UPSTREAM config (F8) | T1-a-1 | Smoke: raw bytes liền mạch, có `[DONE]`, TTFB < 5s | **done — mock-verified** (worker E2E qua proxy) |
 | T1-c | apps/dev-console | UI harness. **Nửa mock: DONE (`mock-verified` — NOT real-upstream-verified)** (UI + mock SSE). Nửa còn lại: trỏ vào adapter/webhub thật | T1-b (nửa 2) | Mock: PASS nghiệm thu browser (`mock-verified`) | **mock done (`mock-verified`) / adapter-wiring todo** |
-| T2-a | apps/worker | WS client boot qua instrumentation.ts: connect, auth token TTL, register capabilities, heartbeat 15s, reconnect backoff | T1-a | Hub dev thấy worker register | todo |
-| T2-b | apps/worker | Job executor: dispatch→ack→chunk*→done/error; cancel AbortController; backpressure bufferedAmount | T1-b, T2-a | E2E 1 job qua hub dev; cancel OK | todo |
-| T3-a | apps/webhub | WS hub server (Hono + ws) + worker registry + heartbeat timeout 45s | T1-a | 2 worker connect; chết 1 → registry cập nhật | todo |
-| T3-b | apps/webhub | Dispatcher: direct push + queue overflow + visibility timeout 30s + ack | T3-a | Kill worker trước stream → re-dispatch OK | todo |
-| T3-c | apps/webhub | POST /v1/chat/completions: SSE zero-buffer **pass-through (F4 — ghi nguyên bytes từ job.chunk binary envelope)**; user disconnect → job.cancel | T1-a-1 | `curl -N` nhận SSE nguyên bản upstream (OpenAI chunks + `[DONE]`) không buffer | todo |
-| T3-d | apps/webhub | StateStore (có `getReasoning/saveReasoning` per D2) + Memory/Redis stub; key prefix `tenant:{tid}:` per D3 | T1-a | 2 lượt chat cùng conv → lượt 2 có đúng context | todo |
-| T3-e | apps/webhub | Auth: Bearer key cho `/v1/*`; worker token cấp hub | T3-a, T3-c | Sai key → 401; sai token → từ chối register | todo |
+| T2-a | apps/worker | WS client boot qua instrumentation.ts: connect, auth token TTL (fetch từ hub), register capabilities, heartbeat 15s, reconnect backoff | T1-a-1 | Hub dev thấy worker register | **done — E2E verified** |
+| T2-b | apps/worker | Job executor: dispatch→ack→chunk*(binary envelope F4 + scanner F6)→done/error; cancel AbortController; backpressure bufferedAmount | T1-b, T2-a | E2E 1 job qua hub dev; cancel OK | **done — E2E verified (mock-verified)** |
+| T3-a | apps/webhub | WS hub server (Hono + ws) + worker registry + heartbeat timeout 45s + token HMAC TTL | T1-a-1 | 2 worker connect; chết 1 → registry cập nhật | **done — verified (probe + worker thật)** |
+| T3-b | apps/webhub | Dispatcher: direct push + queue overflow + visibility timeout 30s + ack + at-most-once | T3-a | Kill worker trước stream → re-dispatch OK | **done — verified (requeue + ack-timeout test trong log agent)** |
+| T3-c | apps/webhub | POST /v1/chat/completions: SSE zero-buffer **pass-through (F4)**; hub byte-blind (F6); user disconnect → job.cancel | T1-a-1 | `curl -N` nhận SSE nguyên bản upstream (OpenAI chunks + `[DONE]`) không buffer | **done — E2E verified, đúng 1 [DONE]** |
+| T3-d | apps/webhub | StateStore (có `getReasoning/saveReasoning` per D2, Memory) ; key prefix `tenant:{tid}:` per D3 | T1-a-1 | 2 lượt chat cùng conv → lượt 2 có đúng context | **done (Memory; Redis chờ G3; assistant answer chưa lưu — open question F6)** |
+| T3-e | apps/webhub | Auth: Bearer key cho `/v1/*`; worker token HMAC TTL cấp hub | T3-a, T3-c | Sai key → 401; sai token → từ chối register | **done — verified (401 + expired-token test)** |
 | T3-f | apps/webhub | **Security baseline (chốt bởi chủ dự án)** — xem apps/webhub/PLAN.md | T3-a..T3-e | Grep log: không có reasoning_content/API key; token hết hạn đúng TTL | todo |
 | T4-a | apps/dev-console | E2E qua webhub thật (?XTransformPort=3003): panel job_id/TTFB/đếm chunk; prompt stress dài | T2-b, T3-b, T3-c | Checklist nghiệm thu PASS | todo |
 | T4-b | ops | Failure drills: kill worker giữa stream; drop WS; restart hub → event:error + [DONE] sạch | T4-a | Mọi kịch bản kết thúc sạch | todo |
@@ -137,14 +137,13 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 2. Song song với T0-b: T0-a (done) + T1-c-mock UI dev-console (done).
 3. **T1-a freeze — LỆNH ĐỢT 2 của chủ dự án: T1-a-1 freeze NGAY (không chờ):** transport WS + frame types + `job.cancel` + `job.chunk` = raw SSE bytes (Uint8Array, không parse-rồi-stringify) + `reasoning_blocks` reserved + tenant prefix. **T1-a-2 (shape reasoning) chờ owner duyệt kết quả G2 debug.**
 
-**Đợt tiếp theo (sau khi owner duyệt T1-a-2):** 3 agent song song:
-- Agent A: T1-b (adapter lib — tái cấu trúc từ route.ts prototype, nhớ: input là ReadableStream raw SSE).
-- Agent B: T2-a + T3-a (2 bên của WS).
-- Agent C: T3-d + T3-e (+ T3-f thiết kế interface).
+**ĐỢT 3 — LAUNCHED & DONE (2026-11-13):** 3 agent song song (Task tool; 3-a adapter+worker, 3-b webhub, 3-c dev-console; agent webhub kịp ghi nhật ký đầy đủ, 3-a/3-c bị deadline giữa chừng — integration agent hoàn tất phần còn lại):
+- 3-a: T1-b adapter + T2-a/T2-b worker — DONE.
+- 3-b: T3-a…T3-e webhub — DONE (nhật ký đầy đủ trong apps/webhub/PLAN.md).
+- 3-c: T1-c nửa 2 + T4-a prep dev-console — DONE (mock upstream-native + adapter route + WebHub mode + F7 auto panel).
+- Integration fixes: `upstream_done_relayed` flag trong job.done (bỏ [DONE] trùng — hub wrapper index.ts làm rơi tham số thứ 5); onUserDisconnect không flush [DONE]; rebuild compat bundle; rewrites() cho dev-console.
 
-**Đợt 3:** Agent B: T3-b + T3-c; Agent C: T2-b; Agent A: hoàn thiện T1-c (nối adapter thật).
-
-**Đợt 4:** T4-a → T4-b → T4-c, T4-d.
+**Đợt 4 (còn lại):** T4-a nghiệm thu checklist + T4-b failure drills + T4-c load test + T4-d relay; port-3000 switchover cho dev-console khi owner sẵn sàng.
 
 **Luật bất di bất dịch:** KHÔNG ai đổi interface trong `packages/protocol` nếu không bump `PROTOCOL_VERSION` + cập nhật PLAN + báo owner. Tên event/frame lấy từ protocol, không tự chế.
 
@@ -230,3 +229,26 @@ Trạng thái: `todo` / `in-progress` / `done` / `blocked`
 - **3-b**: `apps/webhub` (T3-a…T3-e) — port 3003.
 - **3-c**: `apps/dev-console` (T1-c nửa 2: ghép adapter thật + wire mới upstream-native; chuẩn bị T4-a) — port 3005.
 Protocol package (T1-a-1) implement trực tiếp bởi agent phiên này TRƯỚC khi bung Đợt 3.
+
+### [v5] Đợt 3 — 3 agent song song + integration E2E (2026-11-13)
+
+**Kết quả Đợt 3:** hạ tầng end-to-end CHẠY THẬT trong sandbox:
+- **packages/protocol (T1-a)**: implement đầy đủ (job/frames/sse + binary envelope codec + scanner F6) — roundtrip inline-verified.
+- **packages/zai-adapter (T1-b)**: `streamChat()` raw pass-through; UPSTREAM=proxy|real; bun-direct smoke OK (1 `[DONE]`, TTFB nhanh).
+- **apps/worker (T2-a/b)**: WS outbound + register/heartbeat/backoff + executor binary envelope + scanner; E2E qua hub OK; cancel OK.
+- **apps/webhub (T3-a..e)**: hub WS + registry + token HMAC TTL + dispatcher (direct push/queue/visibility 30s/at-most-once) + SSE pass-through byte-blind + StateStore tenant-prefix + auth 401. Nhật ký đầy đủ trong apps/webhub/PLAN.md (kể cả probe E2E giả worker + expired-token test).
+- **apps/dev-console (T1-c nửa 2 + T4-a prep)**: mock upstream-native + adapter route + 3-mode switcher (Mock/Adapter/WebHub) + F7 auto thinking panel + debug job_id. Browser-verified qua agent-browser.
+
+**Integration fixes (sau khi gộp 3 agent):**
+1. **[DONE] trùng lặp** — 3 nguyên nhân xếp lớp: (a) hub flush defensively trong khi worker đã relay `[DONE]` của upstream → thêm field optional `upstream_done_relayed` vào `job.done` (worker set từ scanner F6; hub chỉ flush khi thiếu — thêm field additive, KHÔNG bump PROTOCOL_VERSION, đã ghi nhận cho owner duyệt); (b) **thủ phạm chính**: hooks wrapper `onDone` trong `apps/webhub/src/index.ts` chỉ khai 4 tham số → tham số thứ 5 bị rơi âm thầm (stack-trace instrumentation bắt được); (c) `onUserDisconnect` flush `[DONE]` gây race khi curl đóng ngay sau khi nhận đủ bytes → bỏ flush (socket đóng, flush vô nghĩa). Kết quả: wire = đúng 1 `data: [DONE]`.
+2. **Adapter-chat treo**: dev-console dùng compat bundle `.zai-compat/` build TRƯỚC khi agent 3-a fix hang `pull()` → rebuild `scripts/build-compat.ts` → OK. Ghi chú cho owner: compat là TEMPORARY — bỏ khi packages ship dist (comment trong next.config.ts).
+3. **WebHub mode 404 khi truy cập trực tiếp :3005** (không qua gateway, XTransformPort vô hiệu): thêm `rewrites()` trong next.config proxy server-side → 1 URL client chạy cả 2 ngữ cảnh.
+
+**Verification tổng (browser + curl, 2026-11-13):**
+- E2E curl qua hub: SSE nguyên bản upstream, `finish_reason` + `usage` từ scanner, đúng 1 `[DONE]`, headers X-Job-Id/X-Request-Id, 401 sai key.
+- Browser (agent-browser): Mock TTFB 129ms / 139🧠/76💬 / badge `mock-verified`; WebHub E2E TTFB 392ms / trả lời "Everest" / badge `no-reasoning (proxy)` / job_id hiển thị.
+- Typecheck root pass; 3 services chạy background: webhub :3003 (tsx watch), worker :3004 (next dev), dev-console :3005 (next dev).
+
+**Nhãn xác minh:** TOÀN BỘ kết quả trên là `mock-verified` / no-reasoning (proxy) — reasoning path là code defensive, `real-upstream-verified` chỉ đạt được trên VPS với `UPSTREAM=real` + key thật (blocker #6).
+
+**Open question cho owner (F6 follow-up):** assistant answer text KHÔNG được lưu vào StateStore (hub byte-blind không trích được từ raw SSE; worker bị cấm đụng content) → bộ nhớ hội thoại MVP dựa vào client gửi đủ history. Nếu muốn server-side memory đầy đủ → cho worker kèm `answer_text` trong `job.done` (mở rộng F6 một cách kiểm soát) — chờ owner chốt.
