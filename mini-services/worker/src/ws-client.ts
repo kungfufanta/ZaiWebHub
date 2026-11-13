@@ -356,10 +356,19 @@ async function connectOnce(state: WorkerState): Promise<void> {
       resolve();
     };
 
-    // Connect timeout: socket không OPEN trong 10s (kẹt CONNECTING/half-open) → đóng + retry.
+    // Connect timeout: chỉ bảo vệ phase CONNECTING — socket không OPEN trong 10s (kẹt CONNECTING
+    // VĨNH VIỄN, Bun edge case) → đóng + retry. BUG ĐÃ FIX (SSE đứt giữa stream): timer cũ
+    // KHÔNG bao giờ được clear khi connect thành công → nó bắn sau đúng 10s và CẮT connection
+    // ĐÃ ESTABLISHED (đang register/online/đang stream job) → drop in-flight jobs → client nhận
+    // SSE đứt không có finish/[DONE]. Giờ: timer bị clear NGAY khi onOpen, và handler chỉ
+    // force-close khi socket còn kẹt CONNECTING (readyState 0) — không bao giờ giết connection
+    // đã OPEN. Sau khi open, vòng đời connection được giữ bởi heartbeat 15s (worker→hub) +
+    // sweep 45s (hub-side) + close event của socket.
     const connectTimer = setTimeout(() => {
       if (settled) return;
-      log('warn', `WS connect timeout after ${WS_CONNECT_TIMEOUT_MS}ms — closing socket to retry`, {
+      // Belt & braces: connection đã OPEN (hoặc đã đóng sạch qua onClose) → timer không có quyền giết.
+      if (connRef && connRef.readyState === WS_OPEN) return;
+      log('warn', `WS connect timeout after ${WS_CONNECT_TIMEOUT_MS}ms — closing stuck CONNECTING socket to retry`, {
         worker_id: state.config.workerId,
         hub_url: state.config.hubUrl,
       });
@@ -375,6 +384,10 @@ async function connectOnce(state: WorkerState): Promise<void> {
 
     const conn = openWs(state.config.hubUrl, {
       onOpen: (c) => {
+        // Connection established → connect-timeout guard hoàn thành nhiệm vụ (chỉ canh phase
+        // CONNECTING). Phải clear NGAY tại đây — nếu không timer sẽ bắn sau 10s và cắt
+        // connection khỏe mạnh giữa stream (bug gốc gây SSE đứt, drop in-flight jobs).
+        clearTimeout(connectTimer);
         state.ws = c;
         state.connected = true;
         state.attempt = 0; // kết nối thành công → reset backoff
