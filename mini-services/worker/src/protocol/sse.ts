@@ -22,6 +22,15 @@ export interface SseMetadata {
   done: boolean; // đã thấy `data: [DONE]`
   finish_reason?: string;
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens?: number };
+  /**
+   * F6 mở rộng (fix "stream closed without [DONE]/finish_reason" mù thông tin):
+   * error frame SSE đi qua stream — cả error frame TRƯỚC-stream của adapter
+   * (`event: error` + `data: {"error":{"message":..}}`) lẫn error chunk dạng OpenAI
+   * của upstream (`data: {"error":...}`). Scanner bắt message/type để executor gửi
+   * job.error với LỖI THẬT thay vì 'stream ended without finish' vô nghĩa.
+   * Metadata-only: KHÔNG đụng content/reasoning — chỉ đọc field `error` control.
+   */
+  error?: { message: string; type?: string };
 }
 
 /**
@@ -59,6 +68,25 @@ export function createSseMetadataScanner(): {
     }
     if (obj && typeof obj === 'object') {
       const o = obj as Record<string, unknown>;
+      // F6 mở rộng: bắt error control frame (đầu tiên thắng — message sau chỉ là noise).
+      // `error: null` trong chunk bình thường → bỏ qua; chỉ nhận object/string có message.
+      if (o.error !== undefined && o.error !== null && meta.error === undefined) {
+        const e = o.error;
+        let message = '';
+        let type: string | undefined;
+        if (typeof e === 'string') {
+          message = e;
+        } else if (typeof e === 'object') {
+          const eo = e as Record<string, unknown>;
+          if (typeof eo.message === 'string') message = eo.message;
+          else if (typeof eo.code === 'string') message = eo.code; // một số upstream chỉ có code
+          if (typeof eo.type === 'string') type = eo.type;
+        }
+        if (message.length > 0) {
+          // cap 300 khớp util.sanitizeErrorMessage — job.error frame gọn, không phình wire.
+          meta.error = { message: message.slice(0, 300), ...(type ? { type } : {}) };
+        }
+      }
       const choices = Array.isArray(o.choices) ? (o.choices as Array<Record<string, unknown>>) : [];
       const first = choices[0];
       if (first && typeof first === 'object') {

@@ -17,6 +17,24 @@ import { errMsg, log, sanitizeErrorMessage } from './util';
 /** Envelope F4 cần job_id là UUID (16 bytes) — kiểm tra trước khi stream, fail fast. */
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
+/**
+ * Map error.type tự do của upstream về enum của JobErrorFrameSchema
+ * ('upstream_error' | 'cancelled' | 'timeout' | 'quota' | 'unknown').
+ * Type lạ từ upstream (vd 'invalid_request_error', 'rate_limit_error') → 'upstream_error'
+ * (nguồn thật vẫn nằm nguyên trong message).
+ */
+const KNOWN_ERROR_TYPES = new Set(['upstream_error', 'cancelled', 'timeout', 'quota', 'unknown']);
+function normalizeErrorType(type: string | undefined): 'upstream_error' | 'cancelled' | 'timeout' | 'quota' | 'unknown' {
+  if (type && KNOWN_ERROR_TYPES.has(type)) {
+    return type as 'upstream_error' | 'cancelled' | 'timeout' | 'quota' | 'unknown';
+  }
+  // Heuristic hữu ích: một số upstream dùng type 'timeout'/'quota' với hậu tố — giữ đúng nghĩa.
+  const t = (type ?? '').toLowerCase();
+  if (t.includes('timeout')) return 'timeout';
+  if (t.includes('quota') || t.includes('rate') || t.includes('limit')) return 'quota';
+  return 'upstream_error';
+}
+
 export interface JobIo {
   /** Gửi JSON control frame (đã validate WorkerToHubSchema ở ws-client). */
   sendControl: (frame: WorkerToHub) => void;
@@ -145,13 +163,26 @@ async function runJob(job: JobPayload, io: JobIo, controller: AbortController): 
         scan_done: r.done,
         upstream_done_relayed_sent: r.done,
       });
+    } else if (r.error) {
+      // F6 mở rộng (fix 20:44): stream đóng mà không có [DONE]/finish NHƯNG scanner đã thấy
+      // error frame SSE đi qua (adapter phát 1 error frame khi upstream từ chối ngay, hoặc
+      // upstream tự emit error chunk) → job.error mang LỖI THẬT thay vì message rỗng.
+      // Bytes error frame đã relay cho client NGUYÊN XI ở trên (at-most-once) — client tự hiển thị.
+      const type = normalizeErrorType(r.error.type);
+      const message = sanitizeErrorMessage(r.error.message);
+      io.sendControl({ type: 'job.error', job_id, error: { message, type } });
+      logJob('warn', 'job ended: upstream error frame (no [DONE]/finish — real cause below)', {
+        error: message,
+        error_type: type,
+        chunks_sent: seq,
+      });
     } else {
       io.sendControl({
         type: 'job.error',
         job_id,
         error: { message: 'stream ended without finish', type: 'unknown' },
       });
-      logJob('warn', 'job ended: stream closed without [DONE]/finish_reason', { chunks_sent: seq });
+      logJob('warn', 'job ended: stream closed without [DONE]/finish_reason (no error frame seen)', { chunks_sent: seq });
     }
   } catch (err) {
     // streamChat theo contract không throw; phòng lỗi bất ngờ — luôn kết thúc bằng 1 terminal frame.
