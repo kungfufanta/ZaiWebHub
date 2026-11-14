@@ -20,6 +20,20 @@ import { stateKey } from './state';
 const ACK_TIMEOUT_MS = 30_000; // visibility timeout (T3-b)
 const MAX_REDISPATCH = 1; // tối đa 1 re-dispatch tổng (2 attempt) trước khi báo lỗi cho user
 
+// ── 4.3-H (14/11/2026) — fix "chết châm 3 phút không có tín hiệu" (báo cáo kiểm thử, mục 5.3/7):
+// Khi worker pool trống, job xếp queue VÔ HẠN → client nhận HTML 504 của ALB sau đúng 180s, không
+// có JSON lỗi hay SSE error frame nào — vi phạm hợp đồng (mục 5.3: tài liệu quy định lỗi phải là
+// event:error + [DONE]). Hai sửa đổi khuyến nghị P2 của báo cáo:
+//   1. FAIL-FAST: job chờ trong queue quá QUEUE_FAILFAST_MS mà vẫn chưa được ack/chunk → gửi
+//      event:error type=timeout + [DONE] cho client NGAY (client nhận lỗi có hợp đồng trong vài
+//      giây thay vì 504 HTML sau 3 phút).
+//   2. PING: flush SSE header + ': ping' comment ngay khi nhận job và lặp mỗi 15s cho tới chunk
+//      đầu — ALB luôn thấy byte nên KHÔNG cắt 180s nữa (stream chờ worker/worker đang nghĩ dài
+//      cũng không bị ngắt); comment SSE được mọi parser OpenAI-compatible bỏ qua, không đụng wire.
+const QUEUE_FAILFAST_MS = 15_000;
+const SSE_PING_INTERVAL_MS = 15_000;
+const PING_BYTES = new TextEncoder().encode(': ping\n\n');
+
 const DONE_BYTES = new TextEncoder().encode(`data: ${SSE_DONE}\n\n`);
 
 type JobStatus = 'queued' | 'dispatched' | 'streaming' | 'done' | 'error' | 'cancelled';
@@ -33,6 +47,8 @@ interface JobRuntime {
   assignedWorkerId: string | null;
   redispatchCount: number;
   visibilityTimer: NodeJS.Timeout | null;
+  queueTimer: NodeJS.Timeout | null; // 4.3-H: fail-fast khi không worker nhận job
+  pingTimer: NodeJS.Timeout | null; // 4.3-H: ': ping' giữ kết nối tới chunk đầu
   settled: boolean; // SSE response đã kết thúc — bỏ qua mọi frame muộn
   cancelled: boolean; // user đã disconnect
   createdAt: number;
@@ -63,6 +79,8 @@ export class Dispatcher {
       assignedWorkerId: null,
       redispatchCount: 0,
       visibilityTimer: null,
+      queueTimer: null,
+      pingTimer: null,
       settled: false,
       cancelled: false,
       createdAt: Date.now(),
@@ -73,6 +91,9 @@ export class Dispatcher {
     if (!dispatched) {
       this.enqueue(rt);
     }
+    // 4.3-H: byte đầu tiên + ': ping' định kỳ — header SSE flush NGAY khi nhận job, ALB không
+    // còn thấy kết nối im lặng (nguồn gốc 504 180s của báo cáo).
+    this.startPingTimer(rt);
   }
 
   // User disconnect (T3-c): trước chunk đầu → hủy job khỏi queue/dispatch (dọn dẹp sạch);
@@ -89,6 +110,8 @@ export class Dispatcher {
     });
     rt.cancelled = true;
     this.clearVisibilityTimer(rt);
+    this.clearQueueTimer(rt);
+    this.stopPingTimer(rt);
     if (rt.chunkCount === 0) {
       this.removeFromQueue(rt);
       if (rt.assignedWorkerId) {
@@ -212,6 +235,7 @@ export class Dispatcher {
       rt.status = 'streaming';
       rt.acked = true; // chunk cũng ngầm xác nhận worker đã nhận job
       this.clearVisibilityTimer(rt);
+      this.stopPingTimer(rt); // 4.3-H: dữ liệu thật đã chảy — không cần ping giữ nữa
       log('info', 'first chunk received — streaming', {
         job_id: jobId,
         request_id: rt.job.request_id,
@@ -319,6 +343,7 @@ export class Dispatcher {
     q.push(rt);
     this.queues.set(key, q);
     rt.status = 'queued';
+    this.armQueueFailFast(rt); // 4.3-H: queue vô hạn khi pool trống → fail-fast 15s
     log('info', 'job queued (no idle worker)', {
       job_id: rt.job.job_id,
       request_id: rt.job.request_id,
@@ -364,6 +389,7 @@ export class Dispatcher {
     rt.assignedWorkerId = worker.worker_id;
     worker.inflight += 1;
     this.startVisibilityTimer(rt);
+    this.clearQueueTimer(rt); // 4.3-H: job đã có đích — hủy fail-fast
     log('info', 'job.dispatch sent (direct push)', {
       job_id: rt.job.job_id,
       request_id: rt.job.request_id,
@@ -384,6 +410,60 @@ export class Dispatcher {
     if (rt.visibilityTimer) {
       clearTimeout(rt.visibilityTimer);
       rt.visibilityTimer = null;
+    }
+  }
+
+  // ── 4.3-H: fail-fast khi queue không có worker + ping giữ kết nối ──
+
+  /** Job chờ quá QUEUE_FAILFAST_MS mà chưa ack/chunk → event:error type=timeout + [DONE] (có hợp đồng). */
+  private armQueueFailFast(rt: JobRuntime): void {
+    this.clearQueueTimer(rt);
+    rt.queueTimer = setTimeout(() => {
+      rt.queueTimer = null;
+      if (rt.settled || rt.cancelled || rt.acked || rt.chunkCount > 0) return;
+      if (rt.status !== 'queued') return;
+      // Cơ hội cuối: có thể vừa có worker rảnh mà drain chưa kịp chạy
+      if (this.tryDispatch(rt)) return;
+      log('warn', 'queue fail-fast — no worker picked up job', {
+        job_id: rt.job.job_id,
+        request_id: rt.job.request_id,
+        tenant_id: rt.job.tenant_id,
+        waited_ms: QUEUE_FAILFAST_MS,
+      });
+      this.failJob(
+        rt,
+        `no worker available for ${Math.round(QUEUE_FAILFAST_MS / 1000)}s — worker pool is empty; try again shortly`,
+        'timeout',
+      );
+    }, QUEUE_FAILFAST_MS);
+    rt.queueTimer.unref?.();
+  }
+
+  private clearQueueTimer(rt: JobRuntime): void {
+    if (rt.queueTimer) {
+      clearTimeout(rt.queueTimer);
+      rt.queueTimer = null;
+    }
+  }
+
+  /** ': ping' comment NGAY khi nhận job + lặp 15s tới chunk đầu — ALB không cắt kết nối im lặng. */
+  private startPingTimer(rt: JobRuntime): void {
+    if (rt.pingTimer) return;
+    this.safeEnqueue(rt, PING_BYTES); // byte đầu tiên — flush header SSE ngay
+    rt.pingTimer = setInterval(() => {
+      if (rt.settled || rt.cancelled || rt.chunkCount > 0) {
+        this.stopPingTimer(rt);
+        return;
+      }
+      this.safeEnqueue(rt, PING_BYTES);
+    }, SSE_PING_INTERVAL_MS);
+    rt.pingTimer.unref?.();
+  }
+
+  private stopPingTimer(rt: JobRuntime): void {
+    if (rt.pingTimer) {
+      clearInterval(rt.pingTimer);
+      rt.pingTimer = null;
     }
   }
 
@@ -498,6 +578,8 @@ export class Dispatcher {
   private settle(rt: JobRuntime, extraBytes?: Uint8Array): void {
     rt.settled = true;
     this.clearVisibilityTimer(rt);
+    this.clearQueueTimer(rt);
+    this.stopPingTimer(rt);
     if (extraBytes) this.safeEnqueue(rt, extraBytes);
     if (rt.controller) {
       try {

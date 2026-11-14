@@ -23,7 +23,10 @@ export interface StatusPayload {
   hub_url: string;
   hub_ws_url: string;
   hub_token_url: string;
+  hub_ws_url_effective: string;
+  hub_endpoint: string;
   attempt: number;
+  last_progress: number | null;
   last_error: string | null;
   upstream: string;
   mode: string;
@@ -61,7 +64,10 @@ export async function buildStatusPayload(): Promise<StatusPayload> {
     hub_url: file?.hub_url ?? (boot ? boot.config.hubHttpBase : ''),
     hub_ws_url: boot ? boot.config.hubUrl : '',
     hub_token_url: boot ? boot.config.hubTokenUrl : '',
+    hub_ws_url_effective: rt.hub_ws_url_effective,
+    hub_endpoint: rt.hub_endpoint,
     attempt: rt.attempt,
+    last_progress: rt.last_progress,
     last_error: rt.last_error,
     upstream: rt.upstream,
     mode: rt.mode,
