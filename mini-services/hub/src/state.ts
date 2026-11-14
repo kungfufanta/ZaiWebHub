@@ -9,7 +9,7 @@
 // hub byte-blind (F6) không thể trích answer từ raw SSE; user messages CÓ lưu;
 // bộ nhớ hội thoại MVP dựa vào client gửi đủ history (OpenAI-style stateless).
 // Owner sau này có thể cho worker kèm `answer_text` trong job.done — quyết định KHÔNG thuộc agent này.
-import type { ChatMessage, ReasoningBlock } from '../protocol/index';
+import type { ChatMessage, ReasoningBlock } from './protocol/index';
 
 export type JobRecordStatus =
   | 'queued'

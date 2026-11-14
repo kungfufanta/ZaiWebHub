@@ -29,7 +29,7 @@ import {
   bearerFromHeader,
   getTenantKeys,
   isWorkerSecretRequired,
-  isValidApiKey,
+  isValidApiKeyAny,
   logSecurityBaselineWarnings,
   matchesWorkerSecret,
   mintWorkerToken,
@@ -39,6 +39,8 @@ import { createChatRouter } from './src/api/chat';
 import { log } from './src/logger';
 import { HubStats } from './src/internal/stats';
 import { createInternalWorkersRouter } from './src/internal/workers';
+import { createInternalApiKeysRouter } from './src/internal/api-keys';
+import { hashApiKey, touchRuntimeApiKey } from './src/runtime-api-keys';
 
 const PORT = Number(process.env.PORT ?? 3003);
 const MAX_TOKEN_TTL_SECONDS = 300;
@@ -112,13 +114,16 @@ app.get('/internal/worker-token', async (c) => {
   return c.json({ token, tenant_id: tenantId, ttl_seconds: ttl, expires_at: exp });
 });
 
-// Bearer key cho /v1/* — sai key → 401 JSON
+// Bearer key cho /v1/* — sai key → 401 JSON. 4.2-K: check env TENANT_KEYS + runtime keys
+// (tạo/thu hồi trên web tab API Keys, file .runtime/api-keys.json — áp dụng NGAY không restart);
+// key runtime hợp lệ được touch last_used_at (debounce flush 3s, không block stream).
 app.use('/v1/*', async (c, next) => {
   const key = bearerFromHeader(c.req.header('Authorization'));
-  if (!key || !isValidApiKey(key)) {
+  if (!key || !(await isValidApiKeyAny(key))) {
     log('warn', 'rejected request: invalid api key', { path: c.req.path });
     return c.json({ error: { message: 'invalid api key' } }, 401);
   }
+  touchRuntimeApiKey(hashApiKey(key));
   await next();
 });
 
@@ -126,6 +131,9 @@ app.route('/', createChatRouter({ dispatcher, store }));
 
 // Endpoint read-only cho Hub UI — auth X-Worker-Secret, không đụng route hiện có.
 app.route('/', createInternalWorkersRouter({ hub, stats }));
+
+// 4.2-K: quản lý API key runtime (list/create/revoke) cho tab API Keys trên Hub UI.
+app.route('/', createInternalApiKeysRouter());
 
 // Route khác → 404 (mặc định Hono) — log để trace
 app.notFound((c) => c.json({ error: { message: 'not found' } }, 404));

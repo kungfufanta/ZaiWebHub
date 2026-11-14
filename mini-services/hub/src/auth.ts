@@ -7,6 +7,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { log } from './logger';
 import { resolveWorkerSecret } from './runtime-secret';
+import { isValidRuntimeApiKey } from './runtime-api-keys';
 
 const DEFAULT_TENANT_KEY = 'zhb_dev_default_key';
 const DEFAULT_SECRET = 'dev-secret-rotate-me';
@@ -37,6 +38,13 @@ export function getTenantKeys(): string[] {
 
 export function isValidApiKey(key: string): boolean {
   return getTenantKeys().includes(key);
+}
+
+// 4.2-K: Bearer key cho /v1/* — env TENANT_KEYS (legacy) HOẶC runtime keys (tạo/thu hồi
+// trên web tab API Keys, file .runtime/api-keys.json — áp dụng NGAY không restart hub).
+export async function isValidApiKeyAny(key: string): Promise<boolean> {
+  if (getTenantKeys().includes(key)) return true;
+  return isValidRuntimeApiKey(key);
 }
 
 // D3 dev mapping: MVP single tenant — mọi key hợp lệ map về tenant 'default'.

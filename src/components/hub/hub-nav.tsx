@@ -1,16 +1,17 @@
 'use client';
 
 // Hub UI nav — tab-based (không dùng next/link vì sandbox chỉ expose 1 route "/").
-// 5 tab: Console / Workers / Stats / Docs / Worker node (worker cục bộ :3005).
+// 6 tab: Console / Workers / API Keys / Stats / Docs / Worker node (worker cục bộ :3005).
 // Sticky trên cùng, controlled theo props, responsive mobile (icon + label gọn).
-import { BookOpen, Gauge, MessagesSquare, Server, Waypoints, Radio } from 'lucide-react';
+import { BookOpen, Gauge, KeyRound, MessagesSquare, Server, Waypoints, Radio } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type HubTab = 'console' | 'workers' | 'stats' | 'docs' | 'worker';
+export type HubTab = 'console' | 'workers' | 'keys' | 'stats' | 'docs' | 'worker';
 
 const TABS: { id: HubTab; label: string; icon: typeof MessagesSquare }[] = [
   { id: 'console', label: 'Console', icon: MessagesSquare },
   { id: 'workers', label: 'Workers', icon: Server },
+  { id: 'keys', label: 'API Keys', icon: KeyRound },
   { id: 'stats', label: 'Stats', icon: Gauge },
   { id: 'docs', label: 'Docs', icon: BookOpen },
   { id: 'worker', label: 'Worker node', icon: Radio },

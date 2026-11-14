@@ -2,9 +2,11 @@
 
 // ZaiWebHub — Unified Hub UI (1 repo, 1 route, sandbox edition)
 // Sandbox chỉ expose 1 route "/" + port 3000 qua Caddy gateway → toàn bộ UI gom về
-// 1 trang với 5 tab client-side (không next/link):
+// 1 trang với 6 tab client-side (không next/link):
 //   Console — chat tester SSE 3 mode (mock / adapter / webhub E2E)
 //   Workers — pool worker từ hub :3003 (qua /api/workers giữ secret server-side)
+//   API Keys — quản lý Bearer key zhb_* client bên ngoài dùng gọi hub /v1/*
+//             (qua /api/api-keys giữ secret server-side; key chỉ hiện nguyên văn 1 lần lúc tạo)
 //   Stats   — uptime + jobs per worker
 //   Docs    — API reference kiểu OpenAI ({HUB} tự điền origin)
 //   Worker node — dashboard worker cục bộ :3005 (setup/status mini-service)
@@ -14,6 +16,7 @@ import { Waypoints } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { ChatTester } from '@/components/chat/chat-tester';
 import { WorkersPanel } from '@/components/hub/workers-panel';
+import { ApiKeysPanel } from '@/components/hub/api-keys-panel';
 import { StatsPanel } from '@/components/hub/stats-panel';
 import { DocsPanel } from '@/components/hub/docs-panel';
 import { WorkerPanel } from '@/components/worker/worker-panel';
@@ -22,7 +25,14 @@ import { HubNav, type HubTab } from '@/components/hub/hub-nav';
 const TAB_STORAGE_KEY = 'zaiwebhub.hubtab.v1';
 
 function isHubTab(value: unknown): value is HubTab {
-  return value === 'console' || value === 'workers' || value === 'stats' || value === 'docs' || value === 'worker';
+  return (
+    value === 'console' ||
+    value === 'workers' ||
+    value === 'keys' ||
+    value === 'stats' ||
+    value === 'docs' ||
+    value === 'worker'
+  );
 }
 
 export default function HubPage() {
@@ -62,6 +72,7 @@ export default function HubPage() {
           </main>
         )}
         {tab === 'workers' && <WorkersPanel />}
+        {tab === 'keys' && <ApiKeysPanel />}
         {tab === 'stats' && <StatsPanel />}
         {tab === 'docs' && <DocsPanel />}
         {tab === 'worker' && <WorkerPanel />}

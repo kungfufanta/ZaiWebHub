@@ -91,7 +91,7 @@ export const API_DOCS: DocSection[] = [
       {
         kind: 'note',
         tone: 'info',
-        text: '`zhb_dev_default_key` là key dev CÔNG KHAI theo thiết kế sandbox (MVP single tenant — không phải secret). Production: set env `TENANT_KEYS` trên hub để cấp key riêng cho từng tenant.',
+        text: '`zhb_dev_default_key` là key dev CÔNG KHAI theo thiết kế sandbox (MVP single tenant — không phải secret). Cấp key riêng cho client bên ngoài: mở tab **API Keys** trên Hub UI để tạo/thu hồi key `zhb_*` (chạy động, không cần restart hub) — hoặc set env `TENANT_KEYS` trên hub.',
       },
     ],
   },
@@ -103,7 +103,7 @@ export const API_DOCS: DocSection[] = [
         kind: 'table',
         headers: ['Nhóm endpoint', 'Cơ chế', 'Header'],
         rows: [
-          ['`/v1/*` (chat cho client)', 'Bearer tenant key', '`Authorization: Bearer <key>` — khớp env `TENANT_KEYS` của hub'],
+          ['`/v1/*` (chat cho client)', 'Bearer tenant key', '`Authorization: Bearer <key>` — khớp env `TENANT_KEYS` hoặc key runtime tạo từ tab API Keys'],
           ['`/internal/*` (worker-token, workers)', 'Shared secret', '`X-Worker-Secret: <WORKER_SECRET>` — timing-safe compare'],
           ['`/healthz`', 'Không auth', '—'],
           ['`/worker` (WS)', 'Hub-mint token trong frame đầu', '— (xem mục WS)'],
