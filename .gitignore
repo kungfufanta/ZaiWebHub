@@ -61,3 +61,4 @@ server.log
 # sandbox runtime (platform-managed, không commit)
 .zscripts/
 /db/custom.db
+upload/
