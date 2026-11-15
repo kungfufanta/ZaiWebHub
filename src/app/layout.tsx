@@ -1,17 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+// 4.4-D: BỎ next/font/google (Geist) — fetch font từ Google lúc BUILD; runner deploy
+// bị chặn internet → nextFontError('Failed to fetch') → build FAIL → deploy "Failed"
+// trắng 500. Font stack hệ thống định nghĩa trực tiếp trong globals.css (--font-geist-*),
+// không phụ thuộc network lúc build lẫn runtime.
 
 export const metadata: Metadata = {
   title: "ZaiWebHub Hub UI — console · workers · stats · docs · worker",
@@ -30,9 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
-      >
+      <body className="antialiased bg-background text-foreground">
         {children}
         <Toaster />
       </body>

@@ -27,18 +27,31 @@ const nextConfig: NextConfig = {
   // - QUA GATEWAY sandbox: gateway thấy XTransformPort=3003 → forward thẳng hub (rewrite không chạy).
   // - TRỰC TIẾP (local/agent-browser, không qua gateway): rewrite proxy server-side sang hub :3003.
   // Worker node service (:3005) — tương tự cho 4 endpoint của dashboard worker.
+  // 4.4-D: rewrite CHỈ chạy khi URL có query XTransformPort (has-query, hành vi giống gateway).
+  // Không có query → Next tự trả lời. Đặc biệt /api/health KHÔNG query giờ là self-health của
+  // console (luôn 200): runner deploy probe health lúc worker chưa sống sẽ không còn 500 →
+  // deploy không bị đánh dấu FAILED; probe worker thật vẫn đi /api/health?XTransformPort=3005.
   async rewrites() {
+    const HUB = "http://127.0.0.1:3003";
     const WORKER = "http://127.0.0.1:3005";
-    return [
-      {
-        source: "/v1/chat/completions",
-        destination: "http://127.0.0.1:3003/v1/chat/completions",
-      },
-      { source: "/api/status", destination: `${WORKER}/api/status` },
-      { source: "/api/setup", destination: `${WORKER}/api/setup` },
-      { source: "/api/disconnect", destination: `${WORKER}/api/disconnect` },
-      { source: "/api/health", destination: `${WORKER}/api/health` },
-    ];
+    const viaGateway = (source: string, destination: string) => ({
+      source,
+      destination,
+      has: [{ type: "query" as const, key: "XTransformPort" }],
+    });
+    // beforeFiles: rewrite phải chạy TRƯỚC filesystem route — nếu không, route handler
+    // /api/health (console self-health) shadow mất rewrite khi có query XTransformPort.
+    return {
+      beforeFiles: [
+        viaGateway("/v1/chat/completions", `${HUB}/v1/chat/completions`),
+        viaGateway("/api/status", `${WORKER}/api/status`),
+        viaGateway("/api/setup", `${WORKER}/api/setup`),
+        viaGateway("/api/disconnect", `${WORKER}/api/disconnect`),
+        viaGateway("/api/health", `${WORKER}/api/health`),
+      ],
+      afterFiles: [],
+      fallback: [],
+    };
   },
 };
 

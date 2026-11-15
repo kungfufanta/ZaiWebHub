@@ -7,6 +7,12 @@
 // thư mục runtime .zscripts (gitignored → deploy mới không có → supervisor tắt lặng lẽ).
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-  const { startServiceSupervisor } = await import('@/lib/hub-supervisor');
-  startServiceSupervisor();
+  // 4.4-D: try/catch bắt mọi lỗi supervisor — supervisor là tối ưu AVAILABILITY,
+  // tuyệt đối KHÔNG được làm server fail-to-boot (fail ở đây = deploy "Failed").
+  try {
+    const { startServiceSupervisor } = await import('@/lib/hub-supervisor');
+    startServiceSupervisor();
+  } catch {
+    /* bỏ qua — interval/probe sau vẫn tự hồi phục ở lần boot kế */
+  }
 }
