@@ -75,3 +75,40 @@
    `bun build index.ts --target bun --minify` rồi chạy file bundle đó.
 5. Fresh deploy: worker node hiện "stopped" là by-design (chưa có secret) —
    setup qua tab Worker node / Workers trên UI sau khi lên sóng.
+
+## 5. 4.4-R — GỐC LỖI deploy Failed cuối cùng: `.zscripts` bị mất sau re-provision
+
+### Cơ chế Deploy thật (đọc từ control service `POST /deploy`)
+
+Bấm Deploy trên UI → control service của sandbox (root, uvicorn `:12600`) nhận
+`POST /deploy {"userid", "chatid"}` → chạy **`bash /home/z/my-project/.zscripts/build.sh`**
+→ tar.gz artifact (`/tmp/build_fullstack_$BUILD_ID.tar.gz`) → nạp lên FC instance mới
+→ FC boot bằng `start.sh` (deploy variant, mục 1) → health check :81 trong 120s.
+
+### Chuỗi chết
+
+1. `.zscripts/` là runtime platform-managed — chỉ có trong image sandbox ban đầu,
+   **KHÔNG có trong git** (bị .gitignore cũ loại).
+2. Sandbox dừng → prestop ghi `/home/sync/repo.tar` = **chỉ chứa git-tracked files**
+   (792 entries: `.git/` + source; KHÔNG có `.zscripts`, node_modules, .next, db).
+3. Sandbox re-provision → `/start.sh` restore từ repo.tar → `.zscripts` MẤT VĨNH VIỄN
+   (cùng số phận: `.env.local`, `.runtime/`, db data — db được `db:push` tạo lại rỗng).
+4. Deploy sau đó → `bash .zscripts/build.sh: No such file or directory` → Deploy **Failed**
+   (trang lỗi platform: "Sorry, there was a problem deploying the code").
+
+### Fix (4.4-R)
+
+- Commit `.zscripts/*.sh` VÀO REPO (8 script deploy tooling — không có secret).
+  `.gitignore` chỉ loại runtime junk sinh ra trong đó (`dev.pid`, `*.log`).
+- Tự-heal: mọi lần reboot, `/start.sh` restore repo.tar → `.zscripts` sống lại →
+  deploy luôn tìm thấy `build.sh`.
+
+### Bài học chẩn đoán
+
+- Code/bundle/standalone/health-check đều sạch (verify bằng mô phỏng đầy đủ:
+  build trong /tmp copy, chạy thật `.zscripts/start.sh` + Caddy :81 → 200) —
+  lỗi nằm ở PLATFORM PIPELINE, không phải app. Nếu deploy Failed không rõ
+  nguyên nhân: `POST http://127.0.0.1:12600/deploy` với userid/chatid từ IM
+  gateway metadata → response JSON trả `error` + `logs` CHÍNH XÁC bước chết.
+- Sau re-provision phải kiểm tra lại: `.env.local` (WORKER_SECRET), `.runtime/`,
+  `.zscripts/` — 3 thứ không theo repo.tar.

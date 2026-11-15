@@ -58,7 +58,13 @@ server.log
 # env example cần commit
 !.env.example
 
-# sandbox runtime (platform-managed, không commit)
-.zscripts/
+# .zscripts PHẢI commit (4.4-R): đây là deploy tooling platform gọi trực tiếp
+# (bash .zscripts/build.sh khi bấm Deploy). Nó KHÔNG nằm trong repo.tar
+# (chỉ chứa git-tracked files) → sau mỗi lần sandbox re-provision, restore từ
+# repo.tar làm MẤT .zscripts → deploy chết "No such file or directory".
+# Commit vào repo = tự-heal: mọi lần boot lại, /start.sh restore repo.tar mang
+# theo .zscripts, deploy luôn tìm thấy build.sh.
+.zscripts/dev.pid
+.zscripts/*.log
 /db/custom.db
 upload/
