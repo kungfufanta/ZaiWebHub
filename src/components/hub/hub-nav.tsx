@@ -30,7 +30,13 @@ export function HubNav({ active, onChange }: { active: HubTab; onChange: (tab: H
           </span>
           <span className="truncate text-xs font-semibold sm:text-sm">ZaiWebHub Hub UI</span>
         </span>
-        <div className="ml-auto flex items-center gap-1" role="tablist" aria-label="Tab chính">
+        {/* flex-wrap: 6 tab không vừa 1 dòng trên mobile (~390px) — tràn sang phải gây
+            scroll ngang toàn trang. Wrap thành dòng 2 luôn hiển thị đủ tab, không swipe. */}
+        <div
+          className="ml-auto flex flex-wrap items-center justify-end gap-1"
+          role="tablist"
+          aria-label="Tab chính"
+        >
           {TABS.map(({ id, label, icon: Icon }) => {
             const activeTab = active === id;
             return (

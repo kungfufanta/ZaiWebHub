@@ -4,7 +4,7 @@
 // Dùng chung cho trang /docs. Site static có renderer riêng (vanilla JS, cùng nội dung).
 import { useCallback, useState } from 'react';
 import { Check, Copy, Info, TriangleAlert } from 'lucide-react';
-import type { DocBlock, DocEndpoint, HttpMethod } from '@/lib/api-docs';
+import type { CodeLang, DocBlock, DocEndpoint, HttpMethod } from '@/lib/api-docs';
 import { cn } from '@/lib/utils';
 
 /* ---------- inline text: parse `code` và **bold** ---------- */
