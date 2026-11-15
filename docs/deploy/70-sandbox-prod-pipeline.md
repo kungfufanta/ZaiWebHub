@@ -112,3 +112,21 @@ Bấm Deploy trên UI → control service của sandbox (root, uvicorn `:12600`)
   gateway metadata → response JSON trả `error` + `logs` CHÍNH XÁC bước chết.
 - Sau re-provision phải kiểm tra lại: `.env.local` (WORKER_SECRET), `.runtime/`,
   `.zscripts/` — 3 thứ không theo repo.tar.
+
+### 4.4-Rb — giới hạn của POST /deploy cục bộ (quan trọng)
+
+Sau khi build xong (artifact 23MB ở `/tmp/build_fullstack_$BUILD_ID.tar.gz`,
+chỉ ~17s nhờ Turbopack cache), handler gọi tiếp cloud API của platform để upload
++ tạo FC instance. Bước này **từ chối mọi identity tự chế** (userid/chatid chỉ
+được truyền qua, không validate cục bộ — test với chatid rác vẫn chạy đủ build
+rồi 500 như nhau) → `Internal Server Error` không có traceback đọc được
+(`/app` root-only 700, uvicorn log ra pts/0).
+
+Hệ quả: **không thể tự deploy từ trong sandbox**. Deploy thật PHẢI bấm từ nút
+Deploy trên UI platform (auth context thật). Vai trò của POST cục bộ: công cụ
+chẩn đoán — phản hồi `error`/`logs` của nó lộ chính xác bước build chết.
+
+Dấu hiệu phân biệt lúc debug deploy Failed:
+- Lỗi build (thấy qua POST cục bộ, trả JSON) → sửa code/`.zscripts`.
+- `Internal Server Error` SAU khi `/tmp/build_fullstack_*.tar.gz` đã đủ → đã
+  qua hết phần build, chết ở cloud — dùng UI Deploy, không dùng POST cục bộ.
