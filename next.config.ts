@@ -18,6 +18,27 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // 4.4-S — SLIM ARTIFACT DEPLOY: gói deploy FC bị phình 23MB (node_modules traced 72MB) vì
+  // tracer over-include. Cắt toàn bộ phần KHÔNG dùng lúc runtime:
+  //  - node_modules/typescript (20MB): tsc không chạy trong standalone prod.
+  //  - @img/*-linuxmusl-x64 (~16MB): FC debian glibc x64 — chỉ cần variant glibc.
+  //  - skills/ + mini-services/ + src/ + dev.log (~1.3MB): tracer copy nhầm do path literal
+  //    trong hub-supervisor/runtime-paths — file CHẾT trong standalone (mini-services prod
+  //    chạy từ mini-services-dist bundle, không phải source).
+  // Không thêm outputFileTracingIncludes cho .prisma: console KHÔNG import @/lib/db lúc
+  // runtime (chỉ src/lib/db.ts tự định nghĩa, không route nào dùng) → thiếu .prisma vô hại,
+  // không thêm 17.5MB query engine vào gói.
+  outputFileTracingExcludes: {
+    "*": [
+      "./node_modules/typescript/**",
+      "./node_modules/@img/sharp-linuxmusl-x64/**",
+      "./node_modules/@img/sharp-libvips-linuxmusl-x64/**",
+      "./skills/**",
+      "./mini-services/**",
+      "./src/**",
+      "./dev.log",
+    ],
+  },
   // Cho phép dev resource (HMR websocket, font dev) từ các host truy cập console:
   // - 127.0.0.1 / localhost: truy cập trực tiếp trong sandbox (agent-browser, curl).
   // - *.space-z.ai: public URL preview/deploy của sandbox (owner mở qua gateway — Host giữ nguyên domain).

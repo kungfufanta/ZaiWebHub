@@ -130,3 +130,46 @@ Dấu hiệu phân biệt lúc debug deploy Failed:
 - Lỗi build (thấy qua POST cục bộ, trả JSON) → sửa code/`.zscripts`.
 - `Internal Server Error` SAU khi `/tmp/build_fullstack_*.tar.gz` đã đủ → đã
   qua hết phần build, chết ở cloud — dùng UI Deploy, không dùng POST cục bộ.
+
+## 6. 4.4-S — SLIM ARTIFACT: 23MB → 12MB (15/11, sau re-provision 05:31)
+
+### Bằng chứng chẩn đoán (toàn bộ verify được từ trong sandbox)
+
+1. `build.sh` OK cả 2 lần chạy (05:32 user deploy + 05:37 POST chẩn đoán) —
+   tarball đủ thành phần → **build không phải vấn đề**.
+2. Mô phỏng FC đầy đủ: giải nén tarball → `server.js` + 2 bundle:
+   Next ready 71–103ms, `/` 200, `/api/health` 200, hub/worker health 200 →
+   **artifact cũ vẫn boot tốt, health check phải pass**.
+3. POST /deploy cục bộ (chatid thật từ IM metadata + userid tự chế): build ~17s
+   xong → 500 plain-text tại cloud API — đúng 4.4-Rb.
+4. Domain `-d` trả 500 static ở MỌI path → chưa từng có FC instance nào sống.
+
+→ Kết luận: chết ở bước cloud (upload/tạo FC). Hai nghi vấn không đọc được từ
+sandbox (`/app` root-only): cloud từ chối artifact (size?) hoặc credential
+cloud của sandbox chết sau re-provision.
+
+### Fix trong tầm tay — loại node_modules chết khỏi standalone
+
+Traced node_modules 72MB gồm: `@img` (sharp) 33MB với CẢ 4 biến thể platform,
+`typescript` 20MB (tsc không chạy runtime), next 18MB (cần). Fix:
+`next.config.ts` `outputFileTracingExcludes` — typescript, sharp musl variants
+(FC debian glibc), skills/mini-services/src/dev.log (file chết do string literal
+trong supervisor). Kết quả: **node_modules traced 72→36MB, tarball 23→12MB
+(-48%)**, rebuild theo đúng `build.sh` + sim lại 4/4 endpoint 200.
+
+Ghi chú kỹ thuật:
+- `src/` `skills/` `mini-services/` `dev.log` (~1.3MB) vẫn còn trong standalone:
+  Turbopack thêm chúng như static file refs (string literal path trong
+  hub-supervisor, vd `'dev.log'` cho log path) miễn nhiễm excludes — vô hại,
+  không đuổi theo.
+- Standalone thiếu `.prisma`/`@prisma` là ĐÚNG: console không import `@/lib/db`
+  lúc runtime (chỉ `src/lib/db.ts` tự định nghĩa, không route nào dùng) → đừng
+  thêm outputFileTracingIncludes cho prisma (17.5MB query engine).
+- Worker bundle đọc `WORKER_PORT` (không phải `WORKER_SERVICE_PORT` — env đó là
+  của supervisor/console).
+
+### Việc còn lại
+
+Bấm Deploy trên UI với artifact 12MB. Nếu VẪN failed → mọi thứ trong sandbox
+đã xanh (build + artifact + boot + health), lỗi nằm 100% ở cloud platform →
+retry sau hoặc cần platform support.
