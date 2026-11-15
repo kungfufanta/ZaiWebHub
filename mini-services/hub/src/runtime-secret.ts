@@ -8,11 +8,13 @@
 // KHÔNG BAO GIỜ log giá trị secret.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { runtimeDir } from './runtime-paths';
 
-// src/runtime-secret.ts → src → hub → mini-services → repo root
+// 4.4-Q: resolve qua runtimeDir() deploy-aware — đúng cả sandbox (source) lẫn FC
+// deploy (bundle /app/mini-services-dist, walk-up import.meta.dir cũ cho /.runtime sai).
 const ROOT = process.env.WORKER_SECRET_FILE
   ? process.env.WORKER_SECRET_FILE // deploy có thể override path đầy đủ
-  : join(import.meta.dir, '..', '..', '..', '.runtime', 'worker-secret.json');
+  : join(runtimeDir(), 'worker-secret.json');
 
 const CACHE_TTL_MS = 2_000;
 let cache: { secret: string | null; at: number } | null = null;

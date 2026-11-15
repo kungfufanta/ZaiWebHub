@@ -16,11 +16,13 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { log } from './logger';
+import { runtimeDir } from './runtime-paths';
 
-// src/runtime-api-keys.ts → src → hub → mini-services → repo root (cùng .runtime/ với worker-secret)
+// 4.4-Q: resolve qua runtimeDir() deploy-aware — khớp đúng chỗ console ghi đọc
+// (FC bundle: /app/.runtime thay vì /.runtime của walk-up cũ).
 const ROOT = process.env.API_KEYS_FILE
   ? process.env.API_KEYS_FILE // deploy có thể override path đầy đủ
-  : join(import.meta.dir, '..', '..', '..', '.runtime', 'api-keys.json');
+  : join(runtimeDir(), 'api-keys.json');
 
 const CACHE_TTL_MS = 2_000;
 const MAX_KEYS = 50;

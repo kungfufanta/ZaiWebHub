@@ -5,9 +5,9 @@
 // Format: { "hub_url": "https://...", "worker_id": "...", "worker_secret": "..." }
 import { rm, rename, readFile, writeFile, unlink } from 'node:fs/promises';
 import { hostname as osHostname } from 'node:os';
-import { join } from 'node:path';
 import type { WorkerConfig } from './config';
 import { loadConfig } from './config';
+import { workerConfigFile } from './runtime-paths';
 
 export interface FileConfig {
   /** Hub public base URL — http/https (hoặc wss nếu copy thẳng WS URL). Có thể kèm ?XTransformPort=... */
@@ -87,8 +87,10 @@ function isValidFileConfig(x: unknown): x is FileConfig {
 }
 
 function configFilePath(): string {
-  // Neo vào thư mục của service (không phụ thuộc cwd của process quản lý).
-  return join(import.meta.dir, '..', 'worker-config.json');
+  // 4.4-Q: deploy-aware (env WORKER_CONFIG_FILE → FC layout /app/worker-config.json →
+  // sandbox layout <root>/mini-services/worker/worker-config.json) — khớp với chỗ
+  // console sync secret sau rotate, không còn phụ thuộc import.meta.dir của bundle.
+  return workerConfigFile();
 }
 
 /** Đọc config file. Trả null nếu thiếu / hỏng format (không throw). */

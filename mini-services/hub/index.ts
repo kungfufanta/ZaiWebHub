@@ -42,7 +42,15 @@ import { createInternalWorkersRouter } from './src/internal/workers';
 import { createInternalApiKeysRouter } from './src/internal/api-keys';
 import { hashApiKey, touchRuntimeApiKey } from './src/runtime-api-keys';
 
-const PORT = Number(process.env.PORT ?? 3003);
+// 4.4-Q: KHÔNG đọc process.env.PORT — start.sh của platform deploy (FC) export
+// PORT=3000 cho TOÀN container; mini-services-start.sh chạy bundle kế thừa env đó →
+// hub listen trùng Next :3000 → EADDRINUSE → chết ngay lúc boot ("deploy lên sóng
+// mà hub chết âm thầm", frontend chỉ thấy chat lỗi). Port hub CHỈ qua HUB_INTERNAL_PORT
+// (supervisor sandbox cũng ghi biến này; mặc định 3003 khớp mọi runbook/gateway).
+const PORT = (() => {
+  const p = Number(process.env.HUB_INTERNAL_PORT ?? '3003');
+  return Number.isInteger(p) && p > 0 && p < 65536 ? p : 3003;
+})();
 const MAX_TOKEN_TTL_SECONDS = 300;
 
 const app = new Hono();

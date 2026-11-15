@@ -16,6 +16,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { localWorkerConfigFile, runtimeDir } from './runtime-paths';
 
 export type WorkerSecretSource = 'runtime-file' | 'env';
 
@@ -24,12 +25,19 @@ export interface WorkerSecretInfo {
   source: WorkerSecretSource | null;
 }
 
-const RUNTIME_DIR = join(process.cwd(), '.runtime');
+// 4.4-Q: resolve qua runtime-paths deploy-aware — trước đây process.cwd() trực tiếp
+// làm console standalone ở FC deploy ghi secret vào /app/next-service-dist/.runtime/
+// trong khi hub bundle đọc chỗ khác → worker không bao giờ đăng ký được trên prod.
+const RUNTIME_DIR = runtimeDir();
 const RUNTIME_FILE = process.env.WORKER_SECRET_FILE
   ? /* deploy có thể override path */ process.env.WORKER_SECRET_FILE
   : join(RUNTIME_DIR, 'worker-secret.json');
+// .env.local chỉ là best-effort sync cho dev/sandbox — ở FC deploy ghi cạnh server.js,
+// không có tác dụng nhưng cũng vô hại.
 const ENV_LOCAL_FILE = join(process.cwd(), '.env.local');
-const LOCAL_WORKER_CONFIG = join(process.cwd(), 'mini-services', 'worker', 'worker-config.json');
+// worker-config.json của worker LOCAL — deploy-aware (sandbox: mini-services/worker/…,
+// FC bundle: /app/worker-config.json) để sync secret sau rotate không ghi lệch chỗ.
+const LOCAL_WORKER_CONFIG = localWorkerConfigFile();
 
 // Cache ngắn chống fs-lặp: /internal/workers poll 5s + token mint lẻ tẻ → đủ rẻ mà vẫn "live".
 const CACHE_TTL_MS = 2_000;
